@@ -7,7 +7,7 @@ This is an implementaton of the sorting algorithm described in the paper:
 
 B. Karsin, V. Weichert, H. Casanova, J. Iacono, and N. Sitchinava. Analysis-driven Engineering of Comparison-based Sorting Algorithms on GPUs. In Proceedings of the 32nd International Conference on Supercomputing (ICS), 2018, to appear.
 
-More details are available in chapter 7 (case study: sorting) of Ben Karsin's dissertation: https://benkarsin.files.wordpress.com/2018/04/dissertation.pdf
+More details are available in chapter 7 (case study: sorting) of Ben Karsin's dissertation: https://benkarsin.files.wordpress.com/2018/10/dissertation.pdf
 
 ## Using GPU-MMS
 
