@@ -17,18 +17,19 @@
 
 
 /* This file is where you define the datatype and comparison operator to sort the given input data. */
-
+#ifndef cmp_hxx
+	#define cmp_hxx
 #define DATATYPE int // Datatype to sort
 #define CASTTYPE int // Datatype to cast key to in order to use __shfl()
-
 
 // Define MAX_INT and MIN_INT as maximum and minimum key values
 // FOR INTEGERS
 #define MAXVAL 2147483647
 #define MINVAL -2147483647
 // FOR LONGS
-//#define MAXVAL 0x0000ffff00000001
-//#define MINVAL 0x000000010000ffff 
+// #define MAXVAL 0x0000ffff00000001
+// #define MINVAL 0x000000010000ffff 
+
 
 // Define abstract format of comparison function
 typedef int(*fptr_t)(DATATYPE, DATATYPE);
@@ -37,20 +38,21 @@ typedef int(*fptr_t)(DATATYPE, DATATYPE);
 // Edit this to be whatever comparison function is needed.
 template<typename T>
 __forceinline__ __device__ int cmp(T a, T b) {
-  return a < b; // Basic less than comparison
+	return a < b; // Basic less than comparison
 
-// L1-norm (manhattan distance)
-//  return ((((int)a)+(int)(a>>32)) < (((int)b)+(int)(b>>32))); // L1-norm (manhattan distance)
+	// L1-norm (manhattan distance)
+	// return ((((int)a)+(int)(a>>32)) < (((int)b)+(int)(b>>32))); // L1-norm (manhattan distance)
 
-// Comparison of fractional values without loss of precision
-//  return (((int)(a>>32)*(int)b) < (((int)(b>>32))*(int)a));
+	// Comparison of fractional values without loss of precision
+	// return (((int)(a>>32)*(int)b) < (((int)(b>>32))*(int)a));
 }
 
 // Host comparison function to check correctness when debugging
 template<typename T>
 __forceinline__ int host_cmp(T a, T b) {
-  return a < b;
+	return a < b;
 }
+#endif
 
 
 /*******************************************************************

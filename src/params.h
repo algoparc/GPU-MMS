@@ -15,7 +15,8 @@
  *
  */
 
-
+#ifndef params_h
+	#define params_h
 #define K 4 // Branching factor (lists merged per round)
 #define PL 2 // Log of K
 #define PIPELINE 1 // Set to 1 to enable pipelining heap merging
@@ -27,3 +28,11 @@
 #define LOGB 5
 #define RANGE 1048576 // Range of randomly generated values
 #define ELTS 32
+
+#define DEBUG 1  // Set this to 1 to check that the output is correctly sorted
+#define ITERS 2 // Number of iterations to compute average runtime
+#define BLOCKS 128
+
+
+
+#endif

@@ -16,13 +16,15 @@
  */
 
 
-#include<stdio.h>
-#include<iostream>
-#include<fstream>
-#include<vector>
-#include<cmath>
-#include<random>
-#include<algorithm>
+#ifndef multimergesort_hxx
+	#define multimergesort_hxx
+#include <stdio.h>
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <cmath>
+#include <random>
+#include <algorithm>
 #include "params.h"
 #include "io-merge-gen.hxx"
 #include "warp-partition.hxx"
@@ -39,128 +41,138 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
 
 // Functions used for debugging and performance analysis
 __global__ void init_count() {
-  if(threadIdx.x==0 && blockIdx.x==0) tot_cmp=0;
+	if(threadIdx.x==0 && blockIdx.x==0) tot_cmp=0;
 }
 __global__ void print_count() {
-  if(threadIdx.x==0 && blockIdx.x==0) printf("cmps:%d\n", tot_cmp);
+	if(threadIdx.x==0 && blockIdx.x==0) printf("cmps:%d\n", tot_cmp);
 }
 
 /* Main CPU function that sorts an input and writes the result to output */
 template<typename T, fptr_t f>
 T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
-  int WARPS = P*(THREADS/W);
-  int* pivots;
-  cudaMalloc(&pivots, (WARPS+1)*K*sizeof(int));
-  cudaMemset(&pivots, 0, (WARPS+1)*K*sizeof(int));
-  int tasks;
-  T* list[2];
-  list[0]=input;
-  list[1]=output;
-  bool listBit = false;
-  int baseBlocks=((N/M)/(THREADS/W));
+	int WARPS = P*(THREADS/W);
+	int* pivots;
+	cudaMalloc(&pivots, (WARPS+1)*K*sizeof(int));
+	cudaMemset(&pivots, 0, (WARPS+1)*K*sizeof(int));
+	int tasks;
+	T* list[2];
+	list[0]=input;
+	list[1]=output;
+	bool listBit = false;
+	int baseBlocks=((N/M)/(THREADS/W));
 
-// Sort the base case into blocks of 1024 elements each
-  squareSort<T,f><<<baseBlocks,THREADS>>>(input, N);
 
-// Check that basecase properly sorted if in DEBUG mode
+	// Sort the base case into blocks of 1024 elements each
+	squareSort<T,f><<<baseBlocks,THREADS>>>(input, N);
+	
+	// Check that basecase properly sorted if in DEBUG mode
 #ifdef DEBUG
-  bool correct=true;
-  cudaMemcpy(h_data, input, N*sizeof(T), cudaMemcpyDeviceToHost);
+	bool correct=true;
+	cudaMemcpy(h_data, input, N*sizeof(T), cudaMemcpyDeviceToHost);
 
-  for(int i=0; i<N/M; i++) {
-    for(int j=1; j<M; j++) {
-      if(f(h_data[i*M+(j)], h_data[i*M+(j-1)])) {
-        correct=false;
-      }
-    }
-  }
-  if(!correct) printf("base case not sorted!\n");
+	for(int i=0; i<N/M; i++) {
+		for(int j=1; j<M; j++) {
+			if(host_cmp(h_data[i*M+(j)], h_data[i*M+(j-1)])) {
+				correct=false;
+			}
+		}
+	}
+
+	if(!correct) {
+		printf("Base case is NOT sorted!\n");
+	}
+	else {
+		printf("Base case is sorted!\n");
+	}
 #endif
 
-// Perform successive merge rounds
-  for(int listSize=M; listSize <= (N/K); listSize *= K) {
-    tasks = (N/listSize)/K;
+	// Perform successive merge rounds
+	for(int listSize=M; listSize <= (N/K); listSize *= K) {
+		tasks = (N/listSize)/K;
 
-    if(tasks > WARPS) { // If each warp has to perform multiple merges
-      for(int i=0; i<tasks/WARPS; i++) {
-        findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
+		if(tasks > WARPS) { // If each warp has to perform multiple merges
+			for(int i=0; i<tasks/WARPS; i++) {
+				findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
 
 #ifdef DEBUG // Check proper partitioning if debug mode
-  testPartitioning<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), pivots, listSize, tasks,WARPS);
-        cudaDeviceSynchronize();
+				printf("Made it before testPartitioning\n");
+				testPartitioning<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), pivots, listSize, tasks,WARPS);
+				printf("Made it after testPartitioning\n");
+				cudaDeviceSynchronize();
+
 #endif
 
-	// Merge based on partitions
-        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
-      }
+				// Merge based on partitions
+				multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
+			}
 
-// Perform remaining tasks
-      if(tasks%WARPS > 0) {
-        findPartitions<T><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
-        cudaDeviceSynchronize();
+			// Perform remaining tasks
+			if(tasks%WARPS > 0) {
+				findPartitions<T><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
+				cudaDeviceSynchronize();
 
-        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, tasks%WARPS, P);
-      }
-    }
+				multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, tasks%WARPS, P);
+			}
+		}
 
-    else { // Each warp only does one task
-      findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
+		else { // Each warp only does one task
+			findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
 #ifdef DEBUG
-  testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
+	testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
 #endif
-      multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
-    }
-    listBit = !listBit; // Switch input/output arrays
-  }
+			multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
+		}
+		listBit = !listBit; // Switch input/output arrays
+	}
 
-  cudaFree(pivots);
+	cudaFree(pivots);
 
-  return list[listBit];
+	return list[listBit];
 }
 
 
 /* Main Kernel to merge groups of K lists */
 template<typename T, fptr_t f>
 __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks, int P) {
-  int totalWarps = P*(THREADS/W);
-  int warpInBlock = threadIdx.x/W;
-  int warpIdx = (blockIdx.x)*(THREADS/W)+warpInBlock;
-  int tid = threadIdx.x%W;
+	int totalWarps = P*(THREADS/W);
+	int warpInBlock = threadIdx.x/W;
+	int warpIdx = (blockIdx.x)*(THREADS/W)+warpInBlock;
+	int tid = threadIdx.x%W;
 
 
-  __shared__ int startRaw[K*(THREADS/W)];
-  int* start = startRaw+(warpInBlock*K);
-  __shared__ int endRaw[K*(THREADS/W)];
-  int* end = endRaw+(warpInBlock*K);
+	__shared__ int startRaw[K*(THREADS/W)];
+	int* start = startRaw+(warpInBlock*K);
+	__shared__ int endRaw[K*(THREADS/W)];
+	int* end = endRaw+(warpInBlock*K);
 
-  int warpsPerTask = totalWarps/tasks;
-  if(warpsPerTask == 0) warpsPerTask=1;
-  int myTask = warpIdx/warpsPerTask;
-  long taskOffset = size*K*myTask;
+	int warpsPerTask = totalWarps/tasks;
+	if(warpsPerTask == 0) warpsPerTask=1;
+	int myTask = warpIdx/warpsPerTask;
+	long taskOffset = size*K*myTask;
 
-  if(myTask < tasks) {
+	if(myTask < tasks) {
 
-    if(tid<K) {
-      start[tid] = pivots[(warpIdx*K)+tid];
-//      if(start[tid]%B != 0)
-//        start[tid] = start[tid] -start[tid]%B;
-    }
+		if(tid<K) {
+			start[tid] = pivots[(warpIdx*K)+tid];
+			// if(start[tid]%B != 0)
+			// 	start[tid] = start[tid] -start[tid]%B;
+		}
 
-    if(tid<K) 
-      end[tid] = pivots[(totalWarps*K)+tid];
-    if(warpIdx % warpsPerTask < warpsPerTask-1 && tid < K)
-      end[tid] = pivots[((warpIdx+1)*K)+tid];
+		if(tid<K) 
+			end[tid] = pivots[(totalWarps*K)+tid];
+		if(warpIdx % warpsPerTask < warpsPerTask-1 && tid < K)
+			end[tid] = pivots[((warpIdx+1)*K)+tid];
 
-    int outputOffset=0;
-    for(int i=0; i<K; i++)
-      outputOffset+=start[i];
+		int outputOffset=0;
+		for(int i=0; i<K; i++)
+			outputOffset+=start[i];
 
 #ifdef PIPELINE
-    multimergePipeline<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
+		multimergePipeline<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
 #else
-    multimerge<T>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
+		multimerge<T>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
 #endif
-  } 
+	} 
 }
 
 
@@ -171,72 +183,72 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
 /*
 template<typename T>
 T* blockMultimergesort(T* input, T* output, T* h_data, int P, int N, int (*f)(T,T)) {
-  int* pivots;
+	int* pivots;
 //printf("numPivots:%d\n", (P+1)*K);
-  cudaMalloc(&pivots, (P+1)*K*sizeof(int));
-  cudaMemset(&pivots, 0, (P+1)*K*sizeof(int));
-  int tasks;
-  T* list[2];
-  list[0]=input;
-  list[1]=output;
-  bool listBit = false;
-  int baseBlocks=((N/M)/(THREADS/W));
+	cudaMalloc(&pivots, (P+1)*K*sizeof(int));
+	cudaMemset(&pivots, 0, (P+1)*K*sizeof(int));
+	int tasks;
+	T* list[2];
+	list[0]=input;
+	list[1]=output;
+	bool listBit = false;
+	int baseBlocks=((N/M)/(THREADS/W));
 
-  squareSort<T><<<baseBlocks,THREADS>>>(input,f);
+	squareSort<T><<<baseBlocks,THREADS>>>(input,f);
 #ifdef DEBUG
-  bool correct=true;
-  cudaMemcpy(h_data, input, N*sizeof(T), cudaMemcpyDeviceToHost);
+	bool correct=true;
+	cudaMemcpy(h_data, input, N*sizeof(T), cudaMemcpyDeviceToHost);
 
-  for(int i=0; i<N/M; i++) {
-    for(int j=1; j<M; j++) {
-      if(h_data[i*M+(j)] < h_data[i*M+(j-1)])
-        correct=false;
-    }
-  }
-  if(!correct) printf("base case not sorted!\n");
+	for(int i=0; i<N/M; i++) {
+		for(int j=1; j<M; j++) {
+			if(h_data[i*M+(j)] < h_data[i*M+(j-1)])
+				correct=false;
+		}
+	}
+	if(!correct) printf("base case not sorted!\n");
 #endif
-  for(int listSize=M; listSize <= (N/K); listSize *= K) {
+	for(int listSize=M; listSize <= (N/K); listSize *= K) {
 //  for(int listSize=M; listSize <= M; listSize *= K) {
-    tasks = (N/listSize)/K;
-    if(tasks > P) {
-      for(int i=0; i<tasks/P; i++) {
-        findPartitions<T><<<P,W>>>(list[listBit]+(i*P*K*listSize), list[!listBit]+(i*P*K*listSize), pivots, listSize, P*K, P);
-        cudaDeviceSynchronize();
+		tasks = (N/listSize)/K;
+		if(tasks > P) {
+			for(int i=0; i<tasks/P; i++) {
+				findPartitions<T><<<P,W>>>(list[listBit]+(i*P*K*listSize), list[!listBit]+(i*P*K*listSize), pivots, listSize, P*K, P);
+				cudaDeviceSynchronize();
 
 #ifdef DEBUG
 //  testPartitioning<T><<<P,W>>>(list[listBit]+(i*P*K*listSize), pivots, listSize, P);
 #endif
 
-        blockMultimergeLevel<T><<<P,BLOCKTHREADS>>>(list[listBit]+(i*P*K*listSize), list[!listBit]+(i*P*K*listSize), pivots, listSize, P, P);
-        cudaDeviceSynchronize();
-      }
+				blockMultimergeLevel<T><<<P,BLOCKTHREADS>>>(list[listBit]+(i*P*K*listSize), list[!listBit]+(i*P*K*listSize), pivots, listSize, P, P);
+				cudaDeviceSynchronize();
+			}
 // Perform remaining tasks
-      if(tasks%P > 0) {
-        findPartitions<T><<<P,W>>>(list[listBit]+((tasks/P)*P*K*listSize), list[!listBit]+((tasks/P)*P*K*listSize), pivots, listSize, P*K, P);
-        cudaDeviceSynchronize();
+			if(tasks%P > 0) {
+				findPartitions<T><<<P,W>>>(list[listBit]+((tasks/P)*P*K*listSize), list[!listBit]+((tasks/P)*P*K*listSize), pivots, listSize, P*K, P);
+				cudaDeviceSynchronize();
 #ifdef DEBUG
 //  testPartitioning<T><<<P,W>>>(list[listBit]+((tasks/P)*P*K*listSize), pivots, listSize, P);
 #endif
 
-        blockMultimergeLevel<T><<<P,BLOCKTHREADS>>>(list[listBit]+((tasks/P)*P*K*listSize), list[!listBit]+((tasks/P)*P*K*listSize), pivots, listSize, tasks%P, P);
-        cudaDeviceSynchronize();
-    
-      }
-    }
-    else {
-      findPartitions<T><<<P,W>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks);
-        cudaDeviceSynchronize();
+				blockMultimergeLevel<T><<<P,BLOCKTHREADS>>>(list[listBit]+((tasks/P)*P*K*listSize), list[!listBit]+((tasks/P)*P*K*listSize), pivots, listSize, tasks%P, P);
+				cudaDeviceSynchronize();
+		
+			}
+		}
+		else {
+			findPartitions<T><<<P,W>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks);
+				cudaDeviceSynchronize();
 #ifdef DEBUG
 //  testPartitioning<T><<<P,W>>>(list[listBit], pivots, listSize, P);
 #endif
 
-      blockMultimergeLevel<T><<<P,BLOCKTHREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
-        cudaDeviceSynchronize();
-    }
-    listBit = !listBit;
-  }
-  cudaFree(pivots);
-  return list[listBit];
+			blockMultimergeLevel<T><<<P,BLOCKTHREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
+				cudaDeviceSynchronize();
+		}
+		listBit = !listBit;
+	}
+	cudaFree(pivots);
+	return list[listBit];
 }
 */
 
@@ -249,34 +261,34 @@ __global__ void blockMultimergeLevel(T* data, T* output, int* pivots, int size, 
 //  int warpIdx = (blockIdx.x)*(THREADS/W)+warpInBlock;
 //  int tid = threadIdx.x%W;
 
-  __shared__ int start[K];
-  __shared__ int end[K];
+	__shared__ int start[K];
+	__shared__ int end[K];
 
 //  int blocksPerTask = P/tasks;
-  int blocksPerTask=0;
-  if(blocksPerTask == 0) blocksPerTask=1;
-  int myTask = blockIdx.x/blocksPerTask;
-  int taskOffset = size*K*myTask;
+	int blocksPerTask=0;
+	if(blocksPerTask == 0) blocksPerTask=1;
+	int myTask = blockIdx.x/blocksPerTask;
+	int taskOffset = size*K*myTask;
 
-  if(myTask < tasks) {
+	if(myTask < tasks) {
 
-    if(threadIdx.x<K) {
-      start[threadIdx.x] = pivots[(blockIdx.x*K)+threadIdx.x];
+		if(threadIdx.x<K) {
+			start[threadIdx.x] = pivots[(blockIdx.x*K)+threadIdx.x];
 //      if(start[threadIdx.x]%B != 0) // Align to B
 //        start[threadIdx.x] = start[threadIdx.x] -start[threadIdx.x]%B;
-    }
+		}
 
-    if(threadIdx.x<K)
-      end[threadIdx.x] = pivots[(P*K)+threadIdx.x];
-    if(blockIdx.x % blocksPerTask < blocksPerTask-1 && threadIdx.x < K)
-      end[threadIdx.x] = pivots[((blockIdx.x+1)*K)+threadIdx.x];
+		if(threadIdx.x<K)
+			end[threadIdx.x] = pivots[(P*K)+threadIdx.x];
+		if(blockIdx.x % blocksPerTask < blocksPerTask-1 && threadIdx.x < K)
+			end[threadIdx.x] = pivots[((blockIdx.x+1)*K)+threadIdx.x];
 
 //      if(end[threadIdx.x]%B != 0) // Align to B
 //        end[threadIdx.x] = end[threadIdx.x] -end[threadIdx.x]%B;
 
-    int outputOffset=0;
-    for(int i=0; i<K; i++)
-      outputOffset+=start[i];
+		int outputOffset=0;
+		for(int i=0; i<K; i++)
+			outputOffset+=start[i];
 //    printf("block:%d, thread:%d, tasks:%d, myTask:%d, outputOffset:%d\n", blockIdx.x, threadIdx.x, tasks,myTask, outputOffset);
 //if(threadIdx.x==0)
 //  printf("block:%d, start[0]:%d, end[0]:%d, start[1]:%d, end[1]:%d, start[2]:%d, end[2]:%d, start[3]:%d, end[3]:%d, outputOffset:%d\n", blockIdx.x, start[0], end[0], start[2], end[2], outputOffset);
@@ -287,8 +299,9 @@ __global__ void blockMultimergeLevel(T* data, T* output, int* pivots, int size, 
 //}
 
 __syncthreads();
-    blockMultimerge<T>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
-  } 
+		blockMultimerge<T>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
+	} 
 }
 */
 
+#endif
