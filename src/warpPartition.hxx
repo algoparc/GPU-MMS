@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef warp_partition_hxx
-	#define warp_partition_hxx
+#ifndef warpPartition_hxx
+	#define warpPartition_hxx
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
@@ -29,10 +29,10 @@
 
 // Find a set of pivots for a given partition
 template<typename T>
-__device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerTask, int warpIdInTask) {
-	const int WARPS = THREADS/W;
+__device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTask, int warpIdInTask) {
+	const int WARPS = THREADS/W; // this becomes 1?
 	int tid = threadIdx.x%W;
-	int warpInBlock = threadIdx.x/W;
+	int warpInBlock = threadIdx.x/W; // always 0? b/c threadIdx.x is between 0 and 31?
 	int targetPivot = ((warpIdInTask)*((size*K)/warpsPerTask));
 	T minVal,maxVal;
 	int minIdx, maxIdx;
@@ -40,35 +40,44 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
 	__shared__ T candidates[K*WARPS];
 	__shared__ int partitionVal[WARPS];
 
-	if(threadIdx.x < WARPS) {
+
+	
+
+	if(threadIdx.x < WARPS) { // aka threadIdx.x < 1
 		partitionVal[threadIdx.x] = (size*K)/2;
+		printf("set partitionVal[%d] = %d\n", threadIdx, (size*K)/2);
 	}
 
- volatile  __shared__ int startBoundary[K*WARPS];
- volatile  __shared__ int endBoundary[K*WARPS];
+	volatile  __shared__ int startBoundary[K*WARPS];
+	volatile  __shared__ int endBoundary[K*WARPS];
 
 	// Initialize boundary positions
-	if(threadIdx.x < K*WARPS) {
+	if(threadIdx.x < K*WARPS) { // aka threadIdx.x < K = 4
 		startBoundary[threadIdx.x] = 0;
 		endBoundary[threadIdx.x] = size-1;
 		tempPivots[tid] = size/2;
+		// printf("tempPivots[%d] = %d\n", tid, tempPivots[tid]);
 	}
 
 	// first warp of task begins at start of every list
 	if(warpIdInTask == 0 && tid < K) {
 		tempPivots[tid] = 0;
+		// printf("tempPivots[%d] = 0\n", tid);
 	}
 
 	__syncthreads();
 
 	// find min and max elts of list
 	if(warpIdInTask > 0) {
+
+
 		// Set initial candidate values
-		if(tid < K) {
-			candidates[warpInBlock*K+tid] = data[size*tid + tempPivots[tid]];
+		if(tid < K) { // only uses the K lowest threads.. why?
+			printf("warpPartition blockIdx: %d\t threadIdx: %d\n", blockIdx.x, threadIdx.x);
+			candidates[warpInBlock*K+tid] = data[size*tid + tempPivots[tid]]; // warpInBlock * K + tid = 0 * K + tid = tid, so candidates[tid]..?
 		}
 
-		__shared__ T partVal[THREADS/W];
+		__shared__ T partVal[THREADS/W]; // this and the next array are size 1
 		__shared__ int partList[THREADS/W];
 		// Sequential section per warp 
 		if(tid==0) {
@@ -95,14 +104,17 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
 				}
 				// Move min and/or max candidates based on target order statistic
 				tempPartitionVal = partitionVal[warpInBlock];
+				// printf("partitionVal[%d]: %d\n", warpInBlock, tempPartitionVal);
 
 				// If we need to move min candidate
 				if(targetPivot >= tempPartitionVal) {
 					partitionVal[warpInBlock] += (endBoundary[warpInBlock*K + minIdx] - tempPivots[minIdx])/2; // Increase rank of current partition boundary
 					startBoundary[warpInBlock*K + minIdx] = tempPivots[minIdx];
 					tempPivots[minIdx]=(endBoundary[warpInBlock*K+minIdx]+startBoundary[warpInBlock*K+minIdx])/2;
+					// printf("tempPivots[%d] = %d\n", minIdx, tempPivots[minIdx]);
 					if(tempPivots[minIdx] == startBoundary[warpInBlock*K + minIdx]) { // Edge case
-						tempPivots[minIdx]++; 
+						tempPivots[minIdx]++;
+						// printf("tempPivots[%d] = %d\n", minIdx, tempPivots[minIdx]);
 						partitionVal[warpInBlock]++;
 					}
 					candidates[warpInBlock*K + minIdx] = data[size*minIdx + tempPivots[minIdx]];
@@ -116,6 +128,7 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
 					partitionVal[warpInBlock] -= (tempPivots[maxIdx] - startBoundary[warpInBlock*K + maxIdx])/2; // Increase rank of current partition boundary
 					endBoundary[warpInBlock*K + maxIdx] = tempPivots[maxIdx];
 					tempPivots[maxIdx]=(endBoundary[warpInBlock*K+maxIdx]+startBoundary[warpInBlock*K+maxIdx])/2;
+					// printf("tempPivots[%d] = %d\n", maxIdx, tempPivots[maxIdx]);
 					candidates[warpInBlock*K + maxIdx] = data[size*maxIdx + tempPivots[maxIdx]];
 					if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0) 
  //         {
@@ -131,6 +144,7 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
 		if(tid < K) {
 			if(tid != partList[warpInBlock]) {
 				tempPivots[tid] = size/2;
+				// printf("tempPivots[%d] = %d\n", tid, tempPivots[tid]);
 				step = size/4;
 
 				while(step >= 1) {
@@ -164,9 +178,11 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
 	int warpIdInTask;
 	int totalWarps = P*(THREADS/W);
 
+	printf("FindPartition blockIdx: %d\t threadIdx: %d\n", blockIdx.x, threadIdx.x);
 
 	warpsPerTask = totalWarps/tasks; // floor
 	if(warpsPerTask <= 1) {
+		// printf("warpsPerTasks LESS than 1\ttotalWarps: %d\ttasks: %d\n", totalWarps, tasks);
 		if(tid < K) {
 			pivots[warpIdx*K+tid] = 0;
 		}
@@ -175,12 +191,13 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
 		}
 	}
 	else {
+		// printf("warpsPerTasks GREATER than 1\ttotalWarps: %d\ttasks: %d\n", totalWarps, tasks);
 		myTask = warpIdx / warpsPerTask; // If we have extra warps, just have them do no work...
 		if(myTask < tasks) {
 			taskOffset = myTask*size*K;
 			warpIdInTask = warpIdx - myTask*warpsPerTask;
 
-			warp_partition<T>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask);
+			warpPartition<T>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask);
 
 			if(tid < K) {
 				pivots[warpIdx*K+tid] = myPivots[tid];
@@ -198,7 +215,7 @@ void __global__ testPartitioning(T* data, int* pivots, int size, int tasks, int 
 	int warpsPerTask;
 	int totalWarps = P*(THREADS/W);
 	warpsPerTask = totalWarps/tasks; // floor
-	printf("Made it in testPartitioning\n");
+	// printf("Made it in testPartitioning\n");
 	if(threadIdx.x==0 && blockIdx.x==0) {
 		int error=false;
 		int pivotVal;
@@ -219,7 +236,7 @@ void __global__ testPartitioning(T* data, int* pivots, int size, int tasks, int 
 		else
 			printf("Partitioning correct!\n");
 	}
-	printf("Finished testing partitioning.\n");
+	// printf("Finished testing partitioning.\n");
 }
 
 #endif

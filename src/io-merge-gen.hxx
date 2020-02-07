@@ -25,7 +25,7 @@
 #include <cmath>
 #include <random>
 #include <algorithm>
-#include "params.h"
+// #include "params.h"
 #include "cmp.hxx"
 #include "basecase/squareSort.hxx"
 

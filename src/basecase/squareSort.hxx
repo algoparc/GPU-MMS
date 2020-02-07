@@ -24,7 +24,7 @@
 #include <cmath>
 #include <random>
 #include <algorithm>
-#include "../params.h"
+// #include "../params.h"
 #include "sortRowMajor.hxx"
 
 // Used for testing different size base cases
@@ -62,10 +62,28 @@ __global__ void squareSort(T* data, int N) {
 
 
 	int blockOffset = (N/gridDim.x)*blockIdx.x;
+	// printf("%d\t%d\n", blockOffset, blockIdx.x);
 
+
+	// N/gridDim.x always comes out to 1024?, sec always increments by M
 	for(int sec = 0; sec < (N/gridDim.x); sec += M*(THREADS/W)) {
+		// printf("%d\n", threadIdx.x);
+		// i goes from 0 to 31 and increments by 1
 		for(int i=0; i<ELTS; i++) {
-			regs[i] = data[blockOffset + sec + (i*THREADS) + threadIdx.x];
+			// printf("%d\n", blockOffset + sec + (i*THREADS) + threadIdx.x);
+			if ((blockOffset + sec + (i*THREADS) + threadIdx.x) >= N) {
+				// printf("dataIndex\t%d\tdata\t%d\n", (blockOffset + sec + (i*THREADS) + threadIdx.x), data[blockOffset + sec + (i*THREADS) + threadIdx.x]);
+				regs[i] = 2147483647;
+			}
+			else {
+				// printf("%d\n", data[blockOffset + sec + (i*THREADS) + threadIdx.x]);
+				regs[i] = data[blockOffset + sec + (i*THREADS) + threadIdx.x];
+			}
+			
+			// for (int j = 0; j < ELTS; j++) {
+			// 	printf("regs[%d]\t%d\n", j, regs[j]);
+			// }
+			
 		}
 		
 		int tid = threadIdx.x%W;
@@ -88,6 +106,11 @@ __global__ void squareSort(T* data, int N) {
 */
 
 		sortSquareRowMajor<T,f>(regs, false);
+		// printf("BREAK\n");
+		// for (int i = 0; i < ELTS; i++) {
+		// 	printf("%d\t%d\t%d\n", blockOffset, tid, regs[i]);
+		// }
+		// printf("\n");
 
 // Warps within a block use the same shared memory, so they have to take turns transposing
 // This lets us have more warps and increases performance!
@@ -97,12 +120,15 @@ __global__ void squareSort(T* data, int N) {
 // transpose in shared memory then write to global
 		transposeSquares<T>(regs, sData);
 		for(int i=0; i<ELTS; i++) {
+			// printf("%d:\tsData: %d\n", i, sData[tid*W + (tid+i)%W]);
 			data[blockOffset + sec + warpOffset + W*i + tid] = sData[tid*W + (tid+i)%W];
+			// printf("%d:\tdata: %d\n", i, data[blockOffset + sec + warpOffset + W*i + tid]);
 		}
 
 		for(int i=(THREADS/W)-1; i>warpId; i--) // Wait for other warps to catch back up
 			__syncthreads();
 	}
+
 }
 
 #endif

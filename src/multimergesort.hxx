@@ -25,10 +25,15 @@
 #include <cmath>
 #include <random>
 #include <algorithm>
-#include "params.h"
+// #include "params.h"
 #include "io-merge-gen.hxx"
-#include "warp-partition.hxx"
+#include "warpPartition.hxx"
 
+// #define CUDA_CALL(x) {
+// 	cudaError_t cuda_error__ = (x);
+// 	if (cuda_error__) 
+// 		printf("CUDA error: " #x " returned \"%s\"\n", cudaGetErrorString(cuda_error__));
+// }
 
 
 // Function that does a single level of multiway mergesort
@@ -51,6 +56,7 @@ __global__ void print_count() {
 template<typename T, fptr_t f>
 T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 	int WARPS = P*(THREADS/W);
+	printf("WARPS: %d\tP: %d\tTHREADS: %d\tW: %d\n", WARPS, P, THREADS, W);
 	int* pivots;
 	cudaMalloc(&pivots, (WARPS+1)*K*sizeof(int));
 	cudaMemset(&pivots, 0, (WARPS+1)*K*sizeof(int));
@@ -59,16 +65,28 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 	list[0]=input;
 	list[1]=output;
 	bool listBit = false;
-	int baseBlocks=((N/M)/(THREADS/W));
-
+	int ceiling = (N + M - 1)/M;
+	int baseBlocks=((ceiling)/(THREADS/W));
+	// int baseBlocks = ((N/M)/(THREADS/W));
 
 	// Sort the base case into blocks of 1024 elements each
 	squareSort<T,f><<<baseBlocks,THREADS>>>(input, N);
+	cudaError_t squareSortError = cudaDeviceSynchronize();
+	if (squareSortError != cudaSuccess) {
+		printf("%s\n", cudaGetErrorString(squareSortError));
+	}
+
+
+
 	
 	// Check that basecase properly sorted if in DEBUG mode
 #ifdef DEBUG
 	bool correct=true;
 	cudaMemcpy(h_data, input, N*sizeof(T), cudaMemcpyDeviceToHost);
+
+	// for (int i = 0; i < N; i++) {
+	// 	printf("%d\t%d\n", i, h_data[i]);
+	// }
 
 	for(int i=0; i<N/M; i++) {
 		for(int j=1; j<M; j++) {
@@ -87,21 +105,26 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 #endif
 
 	// Perform successive merge rounds
+	printf("listSize=M: %d\nN/K: %d\n", M, N/K);
 	for(int listSize=M; listSize <= (N/K); listSize *= K) {
 		tasks = (N/listSize)/K;
-
+		printf("tasks: %d\nWARPS: %d\n", tasks, WARPS);
 		if(tasks > WARPS) { // If each warp has to perform multiple merges
 			for(int i=0; i<tasks/WARPS; i++) {
 				findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
-
+				printf("made it before debug\n");
 #ifdef DEBUG // Check proper partitioning if debug mode
 				printf("Made it before testPartitioning\n");
 				testPartitioning<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), pivots, listSize, tasks,WARPS);
 				printf("Made it after testPartitioning\n");
-				cudaDeviceSynchronize();
+				
+				cudaError_t testPartitioningError = cudaDeviceSynchronize();
+				if (testPartitioningError != cudaSuccess) {
+					printf("%s\n", cudaGetErrorString(testPartitioningError));
+				}
 
 #endif
-
+				printf("test\n");
 				// Merge based on partitions
 				multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
 			}
@@ -118,15 +141,16 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 		else { // Each warp only does one task
 			findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
 #ifdef DEBUG
-	testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
+			testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
 #endif
+
 			multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
 		}
 		listBit = !listBit; // Switch input/output arrays
 	}
 
 	cudaFree(pivots);
-
+	printf("finish multimerge\n");
 	return list[listBit];
 }
 

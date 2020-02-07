@@ -28,6 +28,21 @@
 #include <random>
 #include <algorithm>
 
+// Min function based on the given comparison function
+template<typename T, fptr_t f>
+__forceinline__ __device__ T myMin(T a, T b) {
+	if(f(a,b)) return a;
+	return b;
+}
+
+// Max function based on the given comparison function
+template<typename T, fptr_t f>
+__forceinline__ __device__ T myMax(T a, T b) {
+	if(f(b,a)) return a;
+	return b;
+	// return max(a,b);
+}
+
 template<typename T>
 __forceinline__ __device__ void cmpSwap(T* a, T* b, void(cmp*)(T*,T*)) {
 	T temp;

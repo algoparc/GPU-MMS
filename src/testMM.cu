@@ -65,11 +65,16 @@ void test_multimergesort(int p, int N) {
 	cudaMalloc(&d_output, N*sizeof(T));
 	float total_time=0.0;
 
-	srand(time(NULL));
+	// srand(time(NULL));
+	srand(11); // consistent seeding
 	for(int it=0; it<ITERS; it++) {
 
 		// Create random list to be sorted
 		create_random_list<T>(h_data, N, 0);
+
+		// for (int i = 0; i < N; i++) {
+		// 	printf("%d\n", h_data[i]);
+		// }
 
 		// Copy list to GPU
 		cudaMemcpy(d_data, h_data, N*sizeof(T), cudaMemcpyHostToDevice);
@@ -107,9 +112,18 @@ void test_multimergesort(int p, int N) {
 
 	// If debug mode is on, check that output is correct
 #ifdef DEBUG
+
+	// print the sorted array
+	// for (int i = 0; i < N; i++) {
+	// 	printf("%d\t%d\n", i, h_data[i]);
+	// }
+
 	bool error=false;
-	for(int i=2; i<N-1; i++) {
+	for(int i=1; i<N; i++) {
 		if(host_cmp<int>(h_data[i], h_data[i-1])) {
+			printf("ERROR FOUND!\n");
+			printf("h_data[%d]: %d\n", i, h_data[i]);
+			printf("h_data[%d]: %d\n", i-1, h_data[i-1]);
 			error=true;
 		}
 	}
@@ -117,6 +131,11 @@ void test_multimergesort(int p, int N) {
 		printf("NOT SORTED!\n");
 	else
 		printf("SORTED!\n");
+
+	// for (int i = 0; i < N; i++) {
+	// 	printf("%d\n", h_data[i]);
+	// }
+
 #endif
 
 	cudaFree(d_data);
