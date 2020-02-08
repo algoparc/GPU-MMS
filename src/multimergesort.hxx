@@ -139,6 +139,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 		}
 
 		else { // Each warp only does one task
+			printf("listsize: %d\n", listSize);
 			findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
 #ifdef DEBUG
 			testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
@@ -174,16 +175,17 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
 	int myTask = warpIdx/warpsPerTask;
 	long taskOffset = size*K*myTask;
 
-	if(myTask < tasks) {
+	if(myTask < tasks) { // warpIdx * tasks / totalWarps < tasks --> warpIdx/totalWarps < 1 (roughly, ignoring integer division)
 
 		if(tid<K) {
 			start[tid] = pivots[(warpIdx*K)+tid];
 			// if(start[tid]%B != 0)
 			// 	start[tid] = start[tid] -start[tid]%B;
+			end[tid] = pivots[(totalWarps*K)+tid];
 		}
 
-		if(tid<K) 
-			end[tid] = pivots[(totalWarps*K)+tid];
+		// if(tid<K) 
+		// 	end[tid] = pivots[(totalWarps*K)+tid];
 		if(warpIdx % warpsPerTask < warpsPerTask-1 && tid < K)
 			end[tid] = pivots[((warpIdx+1)*K)+tid];
 

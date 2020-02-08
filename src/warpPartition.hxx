@@ -27,25 +27,31 @@
 #include "params.h"
 
 
+
+
+
+/*	Parameters
+ *	warpIdInTask = warpIdx - myTask*warpsPerTask;
+ */
+
 // Find a set of pivots for a given partition
 template<typename T>
 __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTask, int warpIdInTask) {
 	const int WARPS = THREADS/W; // this becomes 1?
-	int tid = threadIdx.x%W;
+	int tid = threadIdx.x%W; // this is the same as threadIdx.x when W is 32
 	int warpInBlock = threadIdx.x/W; // always 0? b/c threadIdx.x is between 0 and 31?
-	int targetPivot = ((warpIdInTask)*((size*K)/warpsPerTask));
+	int targetPivot = ((warpIdInTask)*((size*K)/warpsPerTask)); // 
 	T minVal,maxVal;
 	int minIdx, maxIdx;
 
-	__shared__ T candidates[K*WARPS];
-	__shared__ int partitionVal[WARPS];
+	__shared__ T candidates[K*WARPS]; // K = 4 candidates
+	__shared__ int partitionVal[WARPS]; // just 1 value
 
-
+	printf("targetPivot: %d\n", targetPivot);
 	
-
 	if(threadIdx.x < WARPS) { // aka threadIdx.x < 1
-		partitionVal[threadIdx.x] = (size*K)/2;
-		printf("set partitionVal[%d] = %d\n", threadIdx, (size*K)/2);
+		partitionVal[threadIdx.x] = (size*K)/2; // sets partitionVal[0] to 2048 for the 4096 case .. halfway point?
+		printf("set partitionVal[%d] = %d\tsize = %d\tK = %d\n", threadIdx.x, (size*K)/2, size, K);
 	}
 
 	volatile  __shared__ int startBoundary[K*WARPS];
@@ -73,7 +79,7 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 
 		// Set initial candidate values
 		if(tid < K) { // only uses the K lowest threads.. why?
-			printf("warpPartition blockIdx: %d\t threadIdx: %d\n", blockIdx.x, threadIdx.x);
+			// printf("warpPartition blockIdx: %d\t threadIdx: %d\n", blockIdx.x, threadIdx.x);
 			candidates[warpInBlock*K+tid] = data[size*tid + tempPivots[tid]]; // warpInBlock * K + tid = 0 * K + tid = tid, so candidates[tid]..?
 		}
 
@@ -84,15 +90,16 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 			partVal[warpInBlock]=MAXVAL;
 			int tempPartitionVal;
 			int iterIdx;
-			minVal=0;
-			maxVal=1;
+			minVal=0; // I think minVal and maxVal are set to arbitrary values since the next while loop always happens
+			maxVal=1; // MIGHT DELETE THESE TWO LINES
 
 			while(partVal[warpInBlock] == MAXVAL) {
-			minVal=MAXVAL;
+			minVal=MAXVAL; // max and min 32 bit values defined in cmp.hxx (this is in int, so doesn't really match with template type T)
 			maxVal=MINVAL;
 				// find min and max - OPTIMIZE use K threads to do min and max reduction
 				for(int i=0; i<K; i++) {
-					iterIdx = warpInBlock*K + i;
+					iterIdx = warpInBlock*K + i; // 0 * K + i = i
+					// compares candidate values with minVal and maxVal to properly set them, also keeps the index (minIdx, maxIdx)
 					if(cmp(candidates[iterIdx], minVal) && tempPivots[i] < size-1) {
 						minVal = candidates[iterIdx];
 						minIdx = i;
@@ -167,7 +174,7 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 // Pivots define the start of the partition that each warp will work on merging
 template<typename T>
 __global__ void findPartitions(T* data, T*output, int* pivots, int size, int numLists, int tasks, int P) {
-	__shared__ int myPivotsRaw[K*(THREADS/W)];
+	__shared__ int myPivotsRaw[K*(THREADS/W)]; // size K when THREADS = W
 	int warpInBlock = threadIdx.x/W;
 	int* myPivots = myPivotsRaw+(warpInBlock*K);
 	int warpIdx = (blockIdx.x)*(THREADS/W) + warpInBlock;
@@ -178,7 +185,7 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
 	int warpIdInTask;
 	int totalWarps = P*(THREADS/W);
 
-	printf("FindPartition blockIdx: %d\t threadIdx: %d\n", blockIdx.x, threadIdx.x);
+	// printf("FindPartition blockIdx: %d\t threadIdx: %d\n", blockIdx.x, threadIdx.x);
 
 	warpsPerTask = totalWarps/tasks; // floor
 	if(warpsPerTask <= 1) {

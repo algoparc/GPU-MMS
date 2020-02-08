@@ -92,47 +92,6 @@ __forceinline__ __device__ bool xorMergeNodes(T* a, T* b, T* out) {
 	return direction;
 }
 
-
-// merge two nodes and store the resulting values in registers
-template<typename T>
-__forceinline__ __device__ T mergeIntoReg(T* heap, int minNode, int maxNode) {
-	int tid = threadIdx.x%W;
-	T* a = heap+(B*minNode);
-	T* b = heap+(B*maxNode);
-	T aVal = a[tid];
-	T bVal = b[B-1-tid];
-	T aTemp;
-	T bTemp;
-	bool down;
-
-	aTemp = myMin<T>(aVal,bVal); 
-	bVal = myMax<T>(aVal,bVal);
-	aVal = aTemp;
-
-#pragma unroll
-	for(int i=B/2; i>0; i=(i>>1)) {
-		down = (tid < (tid ^ ((i<<1)-1)));
-
-		aTemp = shfl_wrapper(aVal, i, W);
-		bTemp = shfl_wrapper(bVal, i, W);
-
-		aTemp = __shfl_xor(aVal, i, W);
-		bTemp = __shfl_xor(bVal, i, W);
-
-		if(down) {
-			aVal = myMin<T>(aVal,aTemp);
-			bVal = myMin<T>(bVal,bTemp);
-		}
-		else {
-			aVal = myMax<T>(aVal,aTemp);
-			bVal = myMax<T>(bVal,bTemp);
-		}
-	}
-
-	b[tid] = bVal;
-	return aVal;
-}
-
 // Method to read a block of B elements from an input list and storing it in the leaf of our heap
 template<typename T>
 __forceinline__ __device__ void fillEmptyLeaf(T* input, T* heap, int listNum, int* start, int* end, int size, int tid) {
@@ -142,101 +101,6 @@ __forceinline__ __device__ void fillEmptyLeaf(T* input, T* heap, int listNum, in
 		if(tid==0)
 			start[listNum] += B;
 	}
-}
-
-// Each thread searches down path to find node to work on
-template<typename T>
-__forceinline__ __device__ int findNodeInPath(T* heap, int nodeGroup, int LOGK) {
-	int nodeIdx=0;
-	for(int i=0; i<nodeGroup; i++) {
-		nodeIdx ++;
-		nodeIdx += (cmp(heap[(2*nodeIdx+1)*B+(B-1)], heap[(2*nodeIdx+2)*B+(B-1)]));
-	}
-	return nodeIdx;
-}
-
-template<typename T>
-__forceinline__ __device__ int fillRegsFromPathBit(T* elts, T* heap, int tid) {
-	int path=1;
-#pragma unroll
-	for(int i=0; i<PL<<1; i+=2) {
-		path = path << 1;
-		elts[i] = heap[(path-1)*B+tid];
-		elts[i+1] = heap[(path)*B+tid];
-		path += (heap[(path-1)*B+(B-1)] > heap[(path)*B+(B-1)]);
-	}
-	return path;
-}
-
-// Each thread searches down path to find node to work on
-template<typename T, fptr_t f>
-__forceinline__ __device__ void fillRegsFromPath(T* elts, T* heap, int* path, int tid) {
-	int idx=0;
-	path[0]=0;
-
-#pragma unroll
-	for(int i=0; i<PL; i++) {
-		elts[idx] = heap[((2*path[i]+1)<<LOGB)+tid];
-		elts[idx+1] = heap[((2*path[i]+2)<<LOGB)+(B-1)-tid];
-		idx+=2;
-
-		path[i+1] = path[i]*2+1;
-		path[i+1] += !f(heap[(path[i+1]<<LOGB)+(B-1)], heap[((path[i+1]+1)<<LOGB)+(B-1)]);
-	}
-}
-
-template<typename T, fptr_t f>
-__forceinline__ __device__ void xorMergeGeneral(T* elts, T* heap, int tid) {
-
-	T temp[2*PL];
-	bool down;
-
-#pragma unroll
-	for(int j=0; j<PL<<1; j+=2) {
-		temp[j]=myMin<T,f>(elts[j],elts[j+1]);
-		elts[j+1] = myMax<T,f>(elts[j],elts[j+1]);
-		elts[j]=temp[j];
-	}
-
-#pragma unroll
-	for(int i=B/2; i>0; i=(i>>1)) {
-
-#pragma unroll
-		for(int j=0; j<PL<<1; j++) {
-			temp[j] = shfl_wrapper(elts[j], i, W);
-		}
-		down = (tid & i);
-
-
-#pragma unroll
-		for(int j=0; j<PL<<1; j++) {
-			if(down) {
-				elts[j] = myMax<T,f>(temp[j],elts[j]);
-			}
-			else {
-				elts[j] = myMin<T,f>(temp[j],elts[j]);
-			}
-		}
-	}     
-}
-
-// Fill an empty node with the merge of its children
-// Pipelined version to increase ILP
-template<typename T, fptr_t f>
-__device__ int heapifyEmptyNodePipeline(T* heap, int* path, int tid) {
-	T elts[2*PL];
-	fillRegsFromPath<T,f>(elts, heap, path, tid);
-
-	xorMergeGeneral<T,f>(elts, heap, tid);
-
-	int idx=0;
-#pragma unroll
-	for(int i=0; i<PL; i++) {
-		heap[(path[i]<<5)+tid] = elts[idx];
-		heap[((path[i+1]-1+((path[i+1]&1)<<1))<<5)+tid] = elts[idx+1];
-		idx+=2;
-	}
-	return path[PL];
 }
 
 // Fill an empty node with the merge of its children
@@ -285,6 +149,48 @@ __device__ void buildHeap(T* input, T* heap, int* start, int* end, int size, int
 
 // Merge K lists into one using 1 warp
 template<typename T, fptr_t f>
+__device__ void multimerge(T* input, T* output, int* start, int* end, int size, int outputOffset) {
+	int warpInBlock = threadIdx.x>>5;
+	int tid = threadIdx.x&(W-1);
+	__shared__ T heapData[B*(2*K-1)*(THREADS/W)]; // Each warp in the block needs its own shared memory
+	T* heap = heapData+((B*(2*K-1))*warpInBlock);
+
+	int LOGK=PL;
+
+	buildHeap<T,f>(input, heap, start, end, size, tid);
+	int outputIdx=tid+outputOffset;
+	int nodeIdx;
+
+	while(heap[B-1] != MAXVAL) {
+		output[outputIdx] = heap[tid];
+		outputIdx += B;
+		nodeIdx = heapifyEmptyNode<T,f>(heap, 0, LOGK, tid);
+		fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
+	}
+
+	if(heap[tid] != MAXVAL) {
+		output[outputIdx] = heap[tid];
+	}
+}
+
+
+
+
+
+// IGNORE BELOW HERE FOR NOW?
+
+
+
+
+
+
+template<typename T>
+__device__ void blockBuildHeap(T* input, T* heap, int* start, int* end, int size) {
+  
+}
+
+// Merge K lists into one using 1 warp
+template<typename T, fptr_t f>
 __device__ void multimergePipeline(T* input, T* output, int* start, int* end, int size, int outputOffset) {
 	int warpInBlock = threadIdx.x>>5;
 	int tid = threadIdx.x&(W-1);
@@ -310,38 +216,141 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
 	if(heap[tid] != MAXVAL) {
 		output[outputIdx] = heap[tid];
 	}
-
 }
 
-// Merge K lists into one using 1 warp
+// Fill an empty node with the merge of its children
+// Pipelined version to increase ILP
 template<typename T, fptr_t f>
-__device__ void multimerge(T* input, T* output, int* start, int* end, int size, int outputOffset) {
-	int warpInBlock = threadIdx.x>>5;
-	int tid = threadIdx.x&(W-1);
-	__shared__ T heapData[B*(2*K-1)*(THREADS/W)]; // Each warp in the block needs its own shared memory
-	T* heap = heapData+((B*(2*K-1))*warpInBlock);
+__device__ int heapifyEmptyNodePipeline(T* heap, int* path, int tid) {
+	T elts[2*PL];
+	fillRegsFromPath<T,f>(elts, heap, path, tid);
 
-	int LOGK=PL;
+	xorMergeGeneral<T,f>(elts, heap, tid);
 
-	buildHeap<T,f>(input, heap, start, end, size, tid);
-	int outputIdx=tid+outputOffset;
-	int nodeIdx;
+	int idx=0;
+#pragma unroll
+	for(int i=0; i<PL; i++) {
+		heap[(path[i]<<5)+tid] = elts[idx];
+		heap[((path[i+1]-1+((path[i+1]&1)<<1))<<5)+tid] = elts[idx+1];
+		idx+=2;
+	}
+	return path[PL];
+}
 
-	while(heap[B-1] != MAXVAL) {
-		output[outputIdx] = heap[tid];
-		outputIdx += B;
-		nodeIdx = heapifyEmptyNode<T,f>(heap, 0, LOGK, tid);
-		fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
+template<typename T, fptr_t f>
+__forceinline__ __device__ void xorMergeGeneral(T* elts, T* heap, int tid) {
+
+	T temp[2*PL];
+	bool down;
+
+#pragma unroll
+	for(int j=0; j<PL<<1; j+=2) {
+		temp[j]=myMin<T,f>(elts[j],elts[j+1]);
+		elts[j+1] = myMax<T,f>(elts[j],elts[j+1]);
+		elts[j]=temp[j];
 	}
 
-	if(heap[tid] != MAXVAL) {
-		output[outputIdx] = heap[tid];
+#pragma unroll
+	for(int i=B/2; i>0; i=(i>>1)) {
+
+#pragma unroll
+		for(int j=0; j<PL<<1; j++) {
+			temp[j] = shfl_wrapper(elts[j], i, W);
+		}
+		down = (tid & i);
+
+
+#pragma unroll
+		for(int j=0; j<PL<<1; j++) {
+			if(down) {
+				elts[j] = myMax<T,f>(temp[j],elts[j]);
+			}
+			else {
+				elts[j] = myMin<T,f>(temp[j],elts[j]);
+			}
+		}
+	}     
+}
+
+// Each thread searches down path to find node to work on
+template<typename T, fptr_t f>
+__forceinline__ __device__ void fillRegsFromPath(T* elts, T* heap, int* path, int tid) {
+	int idx=0;
+	path[0]=0;
+
+#pragma unroll
+	for(int i=0; i<PL; i++) {
+		elts[idx] = heap[((2*path[i]+1)<<LOGB)+tid];
+		elts[idx+1] = heap[((2*path[i]+2)<<LOGB)+(B-1)-tid];
+		idx+=2;
+
+		path[i+1] = path[i]*2+1;
+		path[i+1] += !f(heap[(path[i+1]<<LOGB)+(B-1)], heap[((path[i+1]+1)<<LOGB)+(B-1)]);
 	}
 }
 
 template<typename T>
-__device__ void blockBuildHeap(T* input, T* heap, int* start, int* end, int size) {
-  
+__forceinline__ __device__ int fillRegsFromPathBit(T* elts, T* heap, int tid) {
+	int path=1;
+#pragma unroll
+	for(int i=0; i<PL<<1; i+=2) {
+		path = path << 1;
+		elts[i] = heap[(path-1)*B+tid];
+		elts[i+1] = heap[(path)*B+tid];
+		path += (heap[(path-1)*B+(B-1)] > heap[(path)*B+(B-1)]);
+	}
+	return path;
+}
+
+// Each thread searches down path to find node to work on
+template<typename T>
+__forceinline__ __device__ int findNodeInPath(T* heap, int nodeGroup, int LOGK) {
+	int nodeIdx=0;
+	for(int i=0; i<nodeGroup; i++) {
+		nodeIdx ++;
+		nodeIdx += (cmp(heap[(2*nodeIdx+1)*B+(B-1)], heap[(2*nodeIdx+2)*B+(B-1)]));
+	}
+	return nodeIdx;
+}
+
+// merge two nodes and store the resulting values in registers
+template<typename T>
+__forceinline__ __device__ T mergeIntoReg(T* heap, int minNode, int maxNode) {
+	int tid = threadIdx.x%W;
+	T* a = heap+(B*minNode);
+	T* b = heap+(B*maxNode);
+	T aVal = a[tid];
+	T bVal = b[B-1-tid];
+	T aTemp;
+	T bTemp;
+	bool down;
+
+	aTemp = myMin<T>(aVal,bVal); 
+	bVal = myMax<T>(aVal,bVal);
+	aVal = aTemp;
+
+#pragma unroll
+	for(int i=B/2; i>0; i=(i>>1)) {
+		down = (tid < (tid ^ ((i<<1)-1)));
+
+		aTemp = shfl_wrapper(aVal, i, W);
+		bTemp = shfl_wrapper(bVal, i, W);
+
+		aTemp = __shfl_xor(aVal, i, W);
+		bTemp = __shfl_xor(bVal, i, W);
+
+		if(down) {
+			aVal = myMin<T>(aVal,aTemp);
+			bVal = myMin<T>(bVal,bTemp);
+		}
+		else {
+			aVal = myMax<T>(aVal,aTemp);
+			bVal = myMax<T>(bVal,bTemp);
+		}
+	}
+
+	b[tid] = bVal;
+	return aVal;
 }
 
 template<typename T>
