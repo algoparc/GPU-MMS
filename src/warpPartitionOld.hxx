@@ -27,7 +27,7 @@
 #include "params.h"
 
 
-
+// SAVING THIS FILE 2/11/20 AS A BACKUP FOR WHEN I MAKE CHANGES
 
 
 /*	Parameters
@@ -47,13 +47,13 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 	__shared__ T candidates[K*WARPS]; // K = 4 candidates
 	__shared__ int partitionVal[WARPS]; // just 1 value
 
-	// if (threadIdx.x == 0) {
-	// 	printf("targetPivot: %d\n", targetPivot);
-	// }
+	if (threadIdx.x == 0) {
+		printf("targetPivot: %d\n", targetPivot);
+	}
 
 	if(threadIdx.x < WARPS) { // aka threadIdx.x < 1
 		partitionVal[threadIdx.x] = (size*K)/2; // sets partitionVal[0] to 2048 for the 4096 case .. halfway point?
-		// printf("set partitionVal[%d] = %d\tsize = %d\tK = %d\n", threadIdx.x, (size*K)/2, size, K);
+		printf("set partitionVal[%d] = %d\tsize = %d\tK = %d\n", threadIdx.x, (size*K)/2, size, K);
 	}
 
 	volatile  __shared__ int startBoundary[K*WARPS];
@@ -96,12 +96,8 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 			maxVal=1; // MIGHT DELETE THESE TWO LINES
 
 			while(partVal[warpInBlock] == MAXVAL) {
-				// if (blockIdx.x == 117) {
-				// 	printf("Made it into while loop. BlockIdx: %d\tThreadIdx: %d\n", blockIdx.x, threadIdx.x);
-				// }
-				
-				minVal=MAXVAL; // max and min 32 bit values defined in cmp.hxx (this is in int, so doesn't really match with template type T)
-				maxVal=MINVAL;
+			minVal=MAXVAL; // max and min 32 bit values defined in cmp.hxx (this is in int, so doesn't really match with template type T)
+			maxVal=MINVAL;
 				// find min and max - OPTIMIZE use K threads to do min and max reduction
 				for(int i=0; i<K; i++) {
 					iterIdx = warpInBlock*K + i; // 0 * K + i = i
@@ -206,16 +202,10 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
 	else {
 		// printf("warpsPerTasks GREATER than 1\ttotalWarps: %d\ttasks: %d\n", totalWarps, tasks);
 		myTask = warpIdx / warpsPerTask; // If we have extra warps, just have them do no work...
-		if (myTask >= tasks) { // why do we just ignore the extra warps?
-			printf("myTask: %d\ttasks: %d\n", myTask, tasks);
-		}
-		if(myTask < tasks) { // myTask becomes 0 for 4096 (maybe for other nice cases, too)
-			taskOffset = myTask*size*(K); // How does changing this change the size of the partitions
+		if(myTask < tasks) {
+			taskOffset = myTask*size*K;
 			warpIdInTask = warpIdx - myTask*warpsPerTask;
-			// if (size == 1024) {
-			// 	printf("taskOffset: %d\tmyTask: %d\ttasks: %d\tsize: %d\tK: %d\n", taskOffset, myTask, tasks, size, K);
-			// }
-	
+
 			warpPartition<T>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask);
 
 			if(tid < K) {
@@ -226,11 +216,11 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
 			}
 		}
 	}
-	// for (int i = 0; i < (P + 1) * K; i++) {
-	// 	if (threadIdx.x == 31 && blockIdx.x == 127) {
-	// 		printf("BlockIdx: %d\t threadIdx: %d\tpivots[%d]: %d\n", blockIdx.x, threadIdx.x, i, pivots[i]);
-	// 	}
-	// }
+	for (int i = 0; i < (P + 1) * K; i++) {
+		if (threadIdx.x == 31 && blockIdx.x == 127) {
+			printf("BlockIdx: %d\t threadIdx: %d\tpivots[%d]: %d\n", blockIdx.x, threadIdx.x, i, pivots[i]);
+		}
+	}
 }
 
 /* FOR DEBUGGING - MAKES SURE PIVOTS MAKE A VALID PARTITION */

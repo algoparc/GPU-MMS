@@ -106,17 +106,17 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
 	// Perform successive merge rounds
 	printf("listSize=M: %d\nN/K: %d\n", M, N/K);
-	for(int listSize=M; listSize <= (N/K); listSize *= K) {
+	for(int listSize=M; listSize <= (N/K); listSize *= K) { // might be worthwhile to investigate how values of listSize affect the merge sort ... for example 512
 		tasks = (N/listSize)/K;
-		printf("tasks: %d\nWARPS: %d\n", tasks, WARPS);
+		printf("tasks: %d\nWARPS: %d\tlistSize: %d\n", tasks, WARPS, listSize);
 		if(tasks > WARPS) { // If each warp has to perform multiple merges
 			for(int i=0; i<tasks/WARPS; i++) {
 				findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
-				printf("made it before debug\n");
+				// printf("TASK > WARPS Made it before debug\n");
 #ifdef DEBUG // Check proper partitioning if debug mode
-				printf("Made it before testPartitioning\n");
+				printf("TASK > WARPS Made it before testPartitioning\n");
 				testPartitioning<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), pivots, listSize, tasks,WARPS);
-				printf("Made it after testPartitioning\n");
+				printf("TASK > WARPS Made it after testPartitioning\n");
 				
 				cudaError_t testPartitioningError = cudaDeviceSynchronize();
 				if (testPartitioningError != cudaSuccess) {
@@ -124,9 +124,9 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 				}
 
 #endif
-				printf("test\n");
 				// Merge based on partitions
 				multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
+				printf("TASK > WARPS Made it after multimergeLevel\n");
 			}
 
 			// Perform remaining tasks
@@ -139,13 +139,16 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 		}
 
 		else { // Each warp only does one task
-			printf("listsize: %d\n", listSize);
+			
 			findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
 #ifdef DEBUG
+			printf("TASK <= WARPS Made it before testPartitioning\n");
 			testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
+			printf("TASK <= WARPS Made it after testPartitioning\n");
 #endif
 
 			multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
+			printf("TASK <= WARPS Made it after multimergeLevel\n");
 		}
 		listBit = !listBit; // Switch input/output arrays
 	}
