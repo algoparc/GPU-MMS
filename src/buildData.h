@@ -47,8 +47,8 @@ void create_random_sorted_list(T* data, int size) {
 
 template<typename T>
 void create_random_list(T* data, int size, int min) {
-	// srand(time(NULL));
-	srand(12); // consistent seeding for testing
+	// srand(time(NULL)); // pseudo-random seeding using time
+	srand(11); // consistent seeding at 11 for testing
 	long temp;
 		// printf("size:%d\n", size);
 	for(int i=0; i<size; i++) {
@@ -60,3 +60,16 @@ void create_random_list(T* data, int size, int min) {
 	}
 }
 #endif
+
+
+/*	pad_list takes in a list of "current_size" elements and appends
+ *	values greater than or equal to the largest value in the
+ *	existing list until there are "new_size" elements in total
+ */
+template<typename T>
+void pad_list(T * data, int current_size, int new_size) {
+	// iterates from the index of current_size and fills up the rest of the list
+	for (int i = current_size; i < new_size; i++) {
+		data[i] = RANGE;
+	}
+}

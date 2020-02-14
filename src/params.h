@@ -30,6 +30,8 @@
 #define ELTS 32
 
 #define DEBUG 1  // Set this to 1 to check that the output is correctly sorted
+// #define PRINT_DEBUG 1 // Defining this adds a bunch of print statements that track progress through the program 
+#define USE_PADDING 1 // Defining this allows padding of the input array to make the size M * K^i
 #define ITERS 1 // Number of iterations to compute average runtime
 #define BLOCKS 128
 

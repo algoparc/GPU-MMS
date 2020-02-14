@@ -92,8 +92,8 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 			partVal[warpInBlock]=MAXVAL;
 			int tempPartitionVal;
 			int iterIdx;
-			minVal=0; // I think minVal and maxVal are set to arbitrary values since the next while loop always happens
-			maxVal=1; // MIGHT DELETE THESE TWO LINES
+			// minVal=0; // I think minVal and maxVal are set to arbitrary values since the next while loop always happens
+			// maxVal=1; // MIGHT DELETE THESE TWO LINES
 
 			while(partVal[warpInBlock] == MAXVAL) {
 				// if (blockIdx.x == 117) {
@@ -191,11 +191,16 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
 	int warpIdInTask;
 	int totalWarps = P*(THREADS/W);
 
-	// printf("FindPartition blockIdx: %d\t threadIdx: %d\n", blockIdx.x, threadIdx.x);
+	#ifdef PRINT_DEBUG
+	printf("FindPartition blockIdx: %d\t threadIdx: %d\n", blockIdx.x, threadIdx.x);
+	#endif
 
 	warpsPerTask = totalWarps/tasks; // floor
 	if(warpsPerTask <= 1) {
-		// printf("warpsPerTasks LESS than 1\ttotalWarps: %d\ttasks: %d\n", totalWarps, tasks);
+		#ifdef PRINT_DEBUG
+		printf("warpsPerTasks LESS than 1\ttotalWarps: %d\ttasks: %d\n", totalWarps, tasks);
+		#endif
+
 		if(tid < K) {
 			pivots[warpIdx*K+tid] = 0;
 		}
@@ -204,18 +209,28 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
 		}
 	}
 	else {
-		// printf("warpsPerTasks GREATER than 1\ttotalWarps: %d\ttasks: %d\n", totalWarps, tasks);
+		#ifdef PRINT_DEBUG
+		printf("warpsPerTasks GREATER than 1\ttotalWarps: %d\ttasks: %d\n", totalWarps, tasks);
+		#endif
+
 		myTask = warpIdx / warpsPerTask; // If we have extra warps, just have them do no work...
+		
+		#ifdef PRINT_DEBUG
 		if (myTask >= tasks) { // why do we just ignore the extra warps?
 			printf("myTask: %d\ttasks: %d\n", myTask, tasks);
 		}
+		#endif
+
 		if(myTask < tasks) { // myTask becomes 0 for 4096 (maybe for other nice cases, too)
 			taskOffset = myTask*size*(K); // How does changing this change the size of the partitions
 			warpIdInTask = warpIdx - myTask*warpsPerTask;
-			// if (size == 1024) {
-			// 	printf("taskOffset: %d\tmyTask: %d\ttasks: %d\tsize: %d\tK: %d\n", taskOffset, myTask, tasks, size, K);
-			// }
-	
+			
+			#ifdef PRINT_DEBUG
+			if (size == 1024) {
+				printf("taskOffset: %d\tmyTask: %d\ttasks: %d\tsize: %d\tK: %d\n", taskOffset, myTask, tasks, size, K);
+			}
+			#endif
+
 			warpPartition<T>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask);
 
 			if(tid < K) {
@@ -226,11 +241,6 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
 			}
 		}
 	}
-	// for (int i = 0; i < (P + 1) * K; i++) {
-	// 	if (threadIdx.x == 31 && blockIdx.x == 127) {
-	// 		printf("BlockIdx: %d\t threadIdx: %d\tpivots[%d]: %d\n", blockIdx.x, threadIdx.x, i, pivots[i]);
-	// 	}
-	// }
 }
 
 /* FOR DEBUGGING - MAKES SURE PIVOTS MAKE A VALID PARTITION */
@@ -239,7 +249,9 @@ void __global__ testPartitioning(T* data, int* pivots, int size, int tasks, int 
 	int warpsPerTask;
 	int totalWarps = P*(THREADS/W);
 	warpsPerTask = totalWarps/tasks; // floor
-	// printf("Made it in testPartitioning\n");
+	#ifdef PRINT_DEBUG
+	printf("Made it in testPartitioning\n");
+	#endif
 	if(threadIdx.x==0 && blockIdx.x==0) {
 		int error=false;
 		int pivotVal;
@@ -255,12 +267,19 @@ void __global__ testPartitioning(T* data, int* pivots, int size, int tasks, int 
 				}
 			}
 		}
-		if(error)
-			printf("Partitioning failed\n");
-		else
-			printf("Partitioning correct!\n");
+		// Print results of this test only if necessary (failure).
+		if(error) {
+			printf("Partitioning FAILED\n");
+		}
+		else {
+			#ifdef PRINT_DEBUG
+			printf("Partitioning SUCCEEDED\n");
+			#endif
+		}
 	}
-	// printf("Finished testing partitioning.\n");
+	#ifdef PRINT_DEBUG
+	printf("Finished testing partitioning.\n");
+	#endif
 }
 
 #endif

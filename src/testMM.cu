@@ -51,36 +51,67 @@ int main(int argc, char** argv) {
 template<typename T>
 void test_multimergesort(int p, int N) {
 
+	// Initialize variables used to measure the runtime of the program.
 	cudaEvent_t start, stop;
 	float time_elapsed=0.0;
 	float minTime=99999;
 	float maxTime=0.0;
-
-	// Create sample sorted lists
-	T* h_data = (T*)malloc(N*sizeof(T));
-
-	T* d_data;
-	T* d_output;
-	cudaMalloc(&d_data, N*sizeof(T));
-	cudaMalloc(&d_output, N*sizeof(T));
 	float total_time=0.0;
 
-	// srand(time(NULL));
-	srand(11); // consistent seeding
+
+	/*	Possible fix: Figure out if the list needs to be padded with extra values
+	 *	so that its size will match M * K^i (only necessary for N > 1024 (M?)).
+	 *	If it needs to be padded, keep the next highest value of M * K^i.
+	 */
+	int new_N = N; // make a new value of N for padding
+	#ifdef USE_PADDING
+	if (N > M) {
+		// Keep incrementing new_N by a factor of K until it is greater or equal to N
+		new_N = M * K;
+		while (new_N < N) {
+			new_N *= K;
+		}
+	}
+	#endif
+
+	#ifdef PRINT_DEBUG
+	// print the adjusted (new) value of N for comparison
+	printf("N: %d\tnew_N: %d\tPadded Elements: %d\n", N, new_N, new_N - N);
+	#endif
+
+	// Create sample sorted lists
+	T* h_data = (T*)malloc(new_N*sizeof(T));
+
+	// Allocate space for input and output lists on the GPU
+	T* d_data;
+	T* d_output;
+	cudaMalloc(&d_data, new_N*sizeof(T));
+	cudaMalloc(&d_output, new_N*sizeof(T));
+
+	// srand(time(NULL)); // pseudo-random seeding using time
+	srand(11); // consistent seeding at 11 for testing
 	for(int it=0; it<ITERS; it++) {
 
 		// Create random list to be sorted
 		create_random_list<T>(h_data, N, 0);
+		#ifdef USE_PADDING
+		// Pad the list with (new_N - N) elements
+		pad_list<T>(h_data, N, new_N);
+		#endif
 
-		// for (int i = 0; i < N; i++) {
-		// 	printf("%d\n", h_data[i]);
-		// }
+		#ifdef PRINT_DEBUG
+		// Print the unsorted, padded list
+		for (int i = 0; i < new_N; i++) {
+			printf("%d\t%d\n", i, h_data[i]);
+		}
+		#endif
+
 
 		// Copy list to GPU
-		cudaMemcpy(d_data, h_data, N*sizeof(T), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_data, h_data, new_N*sizeof(T), cudaMemcpyHostToDevice);
 
 		// Zero out result array
-		cudaMalloc(&d_output, N*sizeof(T));
+		cudaMalloc(&d_output, new_N*sizeof(T));
 		//  cudaMemset(&d_output, 0, N*sizeof(T));
 
 		cudaDeviceSynchronize();
@@ -90,7 +121,7 @@ void test_multimergesort(int p, int N) {
 		cudaEventRecord(start, 0);
 
 		// Run GPU-MMS.  T is datatype and cmp is comparison function (defined in cmp.hxx)
-		d_output = multimergesort<T,cmp>(d_data, d_output, h_data, p, N);
+		d_output = multimergesort<T,cmp>(d_data, d_output, h_data, p, new_N);
 		cudaDeviceSynchronize();
 
 		cudaEventRecord(stop,0);
@@ -104,20 +135,19 @@ void test_multimergesort(int p, int N) {
 		if(it<ITERS-1)
 			cudaFree(&d_output);
 	}
-	total_time = total_time/ITERS;
-	printf("%lf %lf %lf\n", total_time, minTime, maxTime);
+	// Calculate the average time to sort a list.
+	float average_time = total_time/ITERS;
+	printf("Sorted %d input(s) of size %d\nTotal Time: %lf\nAverage Time: %lf\nMin Time: %lf\nMax Time: %lf\n", ITERS, N, total_time, average_time, minTime, maxTime);
 
 	// copy sorted result back to CPU
 	cudaMemcpy(h_data, d_output, N*sizeof(T), cudaMemcpyDeviceToHost);
 
 	// If debug mode is on, check that output is correct
 #ifdef DEBUG
-
-	// print the sorted array
-	// for (int i = 0; i < N; i++) {
-	// 	printf("%d\t%d\n", i, h_data[i]);
-	// }
-
+	/*	Loop through the list and look for any adjacent elements that
+	 *	are not sorted in increasing order. Print these errors.
+	 *	Note: this only checks the last list if there are multiple (ITERS > 1).
+	 */
 	bool error=false;
 	for(int i=1; i<N; i++) {
 		if(host_cmp<int>(h_data[i], h_data[i-1])) {
@@ -127,17 +157,22 @@ void test_multimergesort(int p, int N) {
 			error=true;
 		}
 	}
-	if(error)
+
+	if(error) {
 		printf("NOT SORTED!\n");
-	else
+	}
+	else {
+		#ifdef PRINT_DEBUG
+		// If the array is sorted, print it out.
+		for (int i = 0; i < N; i++) {
+			printf("%d\t%d\n", i, h_data[i]);
+		}
+		#endif
 		printf("SORTED!\n");
-
-	// for (int i = 0; i < N; i++) {
-	// 	printf("%d\n", h_data[i]);
-	// }
-
+	}
 #endif
 
+	// Free dynamically allocated memory
 	cudaFree(d_data);
 	cudaFree(d_output);
 	free(h_data);
