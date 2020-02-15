@@ -52,24 +52,35 @@ __global__ void print_count() {
 	if(threadIdx.x==0 && blockIdx.x==0) printf("cmps:%d\n", tot_cmp);
 }
 
-/* Main CPU function that sorts an input and writes the result to output */
+/*	Main CPU function that uses the GPU to sort an input,
+ *	write the result to output, and return the sorted array.
+ *	T - the data type of the values in the arrays
+ *	f - a function pointer for the function used to compare values in the arrays
+ *	input - an array of unsorted values (on the GPU)
+ *	output - an array that will contain the sorted values from input (on the GPU)
+ *	h_data - an array used for error checking (on the CPU)
+ *	P - the number of blocks used on the GPU
+ *	N - the size of the (input, output, and h_data) arrays
+ */
 template<typename T, fptr_t f>
 T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
+	// Calculate the number of warps used.
 	int WARPS = P*(THREADS/W);
 	#ifdef PRINT_DEBUG
 	printf("WARPS: %d\tP: %d\tTHREADS: %d\tW: %d\n", WARPS, P, THREADS, W);
 	#endif
+	/*	Allocate and zero out memory for an array of pivots. These pivots are
+	 *	used to divide sections of the array so that they can be merged.
+	 */
 	int* pivots;
 	cudaMalloc(&pivots, (WARPS+1)*K*sizeof(int));
 	cudaMemset(&pivots, 0, (WARPS+1)*K*sizeof(int));
 	int tasks;
-	T* list[2];
-	list[0]=input;
-	list[1]=output;
-	bool listBit = false;
-	int ceiling = (N + M - 1)/M;
-	int baseBlocks=((ceiling)/(THREADS/W));
-	// int baseBlocks = ((N/M)/(THREADS/W));
+	T* array[2];
+	array[0]=input;
+	array[1]=output;
+	bool arrayBit = false;
+	int baseBlocks=((N + M - 1)/M) / (THREADS/W);
 
 	// Sort the base case into blocks of 1024 elements each
 	squareSort<T,f><<<baseBlocks,THREADS>>>(input, N);
@@ -108,32 +119,32 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
 	// Perform successive merge rounds
 	#ifdef PRINT_DEBUG
-	printf("listSize=M: %d\tN/K: %d\n", M, N/K);
+	printf("arraySize=M: %d\tN/K: %d\n", M, N/K);
 	#endif
-	/*	Merge K segments of the list at a time from bottom up
+	/*	Merge K segments of the array at a time from bottom up
 	 *	for sorting. Start with blocks of size M, then incrase
 	 *	by a factor of K each time.
 	 */
-	for(int listSize=M; listSize <= (N/K); listSize *= K) { // might be worthwhile to investigate how values of listSize affect the merge sort ... for example 512
-		tasks = (N/listSize)/K; // tasks is the number of merges happening at the current level of the merge sort
+	for(int arraySize=M; arraySize <= (N/K); arraySize *= K) { // might be worthwhile to investigate how values of arraySize affect the merge sort ... for example 512
+		tasks = (N/arraySize)/K; // tasks is the number of merges happening at the current level of the merge sort
 		#ifdef PRINT_DEBUG
-		printf("tasks: %d\tWARPS: %d\tlistSize: %d\n", tasks, WARPS, listSize);
+		printf("tasks: %d\tWARPS: %d\tarraySize: %d\n", tasks, WARPS, arraySize);
 		#endif 
 		if(tasks > WARPS) { // If each warp has to perform multiple merges
 			for(int i=0; i<tasks/WARPS; i++) {
-				findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
+				findPartitions<T><<<P,THREADS>>>(array[arrayBit]+(i*WARPS*K*arraySize), array[!arrayBit]+(i*WARPS*K*arraySize), pivots, arraySize, WARPS, P);
 				#ifdef PRINT_DEBUG				
 				printf("TASKS > WARPS findPartitions completed\n");
 				#endif
 
 #ifdef DEBUG // Check proper partitioning if debug mode
-				testPartitioning<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), pivots, listSize, tasks,WARPS);
+				testPartitioning<T><<<P,THREADS>>>(array[arrayBit]+(i*WARPS*K*arraySize), pivots, arraySize, tasks,WARPS);
 				#ifdef PRINT_DEBUG
 				printf("TASKS > WARPS testPartitioning completed\n");
 				#endif
 #endif
 				// Merge based on partitions
-				multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
+				multimergeLevel<T,f><<<P,THREADS>>>(array[arrayBit]+(i*WARPS*K*arraySize), array[!arrayBit]+(i*WARPS*K*arraySize), pivots, arraySize, WARPS, P);
 				#ifdef PRINT_DEBUG
 				printf("TASKS > WARPS multimergeLevel completed\n");
 				#endif
@@ -142,14 +153,14 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
 			// Perform remaining tasks
 			if(tasks%WARPS > 0) {
-				findPartitions<T><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
+				findPartitions<T><<<P,THREADS>>>(array[arrayBit]+((tasks/WARPS)*WARPS*K*arraySize), array[!arrayBit]+((tasks/WARPS)*WARPS*K*arraySize), pivots, arraySize, WARPS, P);
 				#ifdef PRINT_DEBUG				
 				printf("TASKS % WARPS > 0 findPartitions completed\n");
 				#endif
 
 				cudaDeviceSynchronize();
 
-				multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, tasks%WARPS, P);
+				multimergeLevel<T,f><<<P,THREADS>>>(array[arrayBit]+((tasks/WARPS)*WARPS*K*arraySize), array[!arrayBit]+((tasks/WARPS)*WARPS*K*arraySize), pivots, arraySize, tasks%WARPS, P);
 				#ifdef PRINT_DEBUG				
 				printf("TASKS % WARPS > 0 multimergeLevel completed\n");
 				#endif
@@ -158,29 +169,29 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
 		else { // Each warp only does one task in this case (TASKS <= WARPS)
 			
-			findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
+			findPartitions<T><<<P,THREADS>>>(array[arrayBit], array[!arrayBit], pivots, arraySize, tasks, P);
 			#ifdef PRINT_DEBUG				
 			printf("TASKS <= WARPS findPartitions completed\n");
 			#endif
 
 #ifdef DEBUG
-			testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
+			testPartitioning<T><<<P,THREADS>>>(array[arrayBit], pivots, arraySize, tasks, WARPS);
 			#ifdef PRINT_DEBUG
 			printf("TASK <= WARPS testPartitioning completed\n");
 			#endif
 #endif
 
-			multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
+			multimergeLevel<T,f><<<P,THREADS>>>(array[arrayBit], array[!arrayBit], pivots, arraySize, tasks, P);
 			#ifdef PRINT_DEBUG
 			printf("TASK <= WARPS multimergeLevel completed\n");
 			#endif
 		}
 		#ifdef PRINT_DEBUG
-		printf("listBit BEFORE: %d\t", listBit);
+		printf("arrayBit BEFORE: %d\t", arrayBit);
 		#endif
-		listBit = !listBit; // Switch input/output arrays
+		arrayBit = !arrayBit; // Switch input/output arrays
 		#ifdef PRINT_DEBUG
-		printf("listBit AFTER: %d\n\n", listBit);
+		printf("arrayBit AFTER: %d\n\n", arrayBit);
 		#endif
 	}
 
@@ -193,12 +204,12 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 	#ifdef PRINT_DEBUG
 	printf("pivots freed properly\n");
 	#endif
-	// Return the sorted list
-	return list[listBit];
+	// Return the sorted array
+	return array[arrayBit];
 }
 
 
-/* Main Kernel to merge groups of K lists */
+/* Main Kernel to merge groups of K arrays */
 template<typename T, fptr_t f>
 __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks, int P) {
 	int totalWarps = P*(THREADS/W);

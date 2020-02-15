@@ -28,7 +28,7 @@
 
 /* CPU Functions to create testData */
 template<typename T>
-void create_sorted_list(T* data, int size, int addVal) {
+void create_sorted_array(T* data, int size, int addVal) {
 	for(int i=0; i<size; i++) {
 		// data[i].key = i+addVal;
 		// data[i].val = i-addVal;
@@ -36,7 +36,7 @@ void create_sorted_list(T* data, int size, int addVal) {
 }
 /*
 template<typename T>
-void create_random_sorted_list(T* data, int size) {
+void create_random_sorted_array(T* data, int size) {
 	// srand(time(NULL));
 	for(int i=0; i<size; i++) {
 		data[i] = {.key = rand()%RANGE, .val= rand()%RANGE};
@@ -46,7 +46,7 @@ void create_random_sorted_list(T* data, int size) {
 */
 
 template<typename T>
-void create_random_list(T* data, int size, int min) {
+void create_random_array(T* data, int size, int min) {
 	// srand(time(NULL)); // pseudo-random seeding using time
 	srand(11); // consistent seeding at 11 for testing
 	long temp;
@@ -62,13 +62,13 @@ void create_random_list(T* data, int size, int min) {
 #endif
 
 
-/*	pad_list takes in a list of "current_size" elements and appends
+/*	pad_array takes in an array of "current_size" elements and appends
  *	values greater than or equal to the largest value in the
- *	existing list until there are "new_size" elements in total
+ *	existing array until there are "new_size" elements in total
  */
 template<typename T>
-void pad_list(T * data, int current_size, int new_size) {
-	// iterates from the index of current_size and fills up the rest of the list
+void pad_array(T * data, int current_size, int new_size) {
+	// iterates from the index of current_size and fills up the rest of the array
 	for (int i = current_size; i < new_size; i++) {
 		data[i] = RANGE;
 	}

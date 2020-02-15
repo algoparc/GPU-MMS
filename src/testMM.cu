@@ -33,7 +33,9 @@
 template<typename T>
 void test_multimergesort(int p, int N);
 
-
+/*	Main function
+ *	Takes in one input, the size of the array to be sorted
+ */
 int main(int argc, char** argv) {
 
 	if(argc != 2) {
@@ -41,13 +43,18 @@ int main(int argc, char** argv) {
 	exit(1);
 	}
 
+	// Test the sorting algorithm on a array of size N.
 	int N = atoi(argv[1]);
 	test_multimergesort<DATATYPE>(BLOCKS, N);
 
 	return 0;
 }
 
-// Create random data and sort it...
+/*	p - an integer describing the number of blocks used on the GPU
+ *	N - an integer describing the size of array to be sorted
+ *	This function creates a array of size N and sorts it using a
+ *	multiway mergesort.
+ */
 template<typename T>
 void test_multimergesort(int p, int N) {
 
@@ -59,7 +66,7 @@ void test_multimergesort(int p, int N) {
 	float total_time=0.0;
 
 
-	/*	Possible fix: Figure out if the list needs to be padded with extra values
+	/*	Possible fix: Figure out if the array needs to be padded with extra values
 	 *	so that its size will match M * K^i (only necessary for N > 1024 (M?)).
 	 *	If it needs to be padded, keep the next highest value of M * K^i.
 	 */
@@ -75,39 +82,38 @@ void test_multimergesort(int p, int N) {
 	#endif
 
 	#ifdef PRINT_DEBUG
-	// print the adjusted (new) value of N for comparison
+	// Print the adjusted (new) value of N for comparison
 	printf("N: %d\tnew_N: %d\tPadded Elements: %d\n", N, new_N, new_N - N);
 	#endif
 
-	// Create sample sorted lists
+	// Allocate space for the input array on the CPU
 	T* h_data = (T*)malloc(new_N*sizeof(T));
 
-	// Allocate space for input and output lists on the GPU
+	// Allocate space for input and output arrays on the GPU
 	T* d_data;
 	T* d_output;
 	cudaMalloc(&d_data, new_N*sizeof(T));
-	cudaMalloc(&d_output, new_N*sizeof(T));
+	// cudaMalloc(&d_output, new_N*sizeof(T));
 
 	// srand(time(NULL)); // pseudo-random seeding using time
 	srand(11); // consistent seeding at 11 for testing
 	for(int it=0; it<ITERS; it++) {
 
-		// Create random list to be sorted
-		create_random_list<T>(h_data, N, 0);
+		// Create random array of size N to be sorted
+		create_random_array<T>(h_data, N, 0);
 		#ifdef USE_PADDING
-		// Pad the list with (new_N - N) elements
-		pad_list<T>(h_data, N, new_N);
+		// Pad the array with (new_N - N) elements. If N == new_N, no new elements are added.
+		pad_array<T>(h_data, N, new_N);
 		#endif
 
 		#ifdef PRINT_DEBUG
-		// Print the unsorted, padded list
+		// Print the unsorted, padded array
 		for (int i = 0; i < new_N; i++) {
 			printf("%d\t%d\n", i, h_data[i]);
 		}
 		#endif
 
-
-		// Copy list to GPU
+		// Copy array to GPU
 		cudaMemcpy(d_data, h_data, new_N*sizeof(T), cudaMemcpyHostToDevice);
 
 		// Zero out result array
@@ -135,7 +141,7 @@ void test_multimergesort(int p, int N) {
 		if(it<ITERS-1)
 			cudaFree(&d_output);
 	}
-	// Calculate the average time to sort a list.
+	// Calculate the average time to sort an array.
 	float average_time = total_time/ITERS;
 	printf("Sorted %d input(s) of size %d\nTotal Time: %lf\nAverage Time: %lf\nMin Time: %lf\nMax Time: %lf\n", ITERS, N, total_time, average_time, minTime, maxTime);
 
@@ -144,9 +150,9 @@ void test_multimergesort(int p, int N) {
 
 	// If debug mode is on, check that output is correct
 #ifdef DEBUG
-	/*	Loop through the list and look for any adjacent elements that
+	/*	Loop through the array and look for any adjacent elements that
 	 *	are not sorted in increasing order. Print these errors.
-	 *	Note: this only checks the last list if there are multiple (ITERS > 1).
+	 *	Note: this only checks the last array if there are multiple (ITERS > 1).
 	 */
 	bool error=false;
 	for(int i=1; i<N; i++) {
@@ -158,6 +164,7 @@ void test_multimergesort(int p, int N) {
 		}
 	}
 
+	// Print whether or not the array is sorted
 	if(error) {
 		printf("NOT SORTED!\n");
 	}
@@ -193,7 +200,7 @@ void test_squareSort(int N) {
 	srand(time(NULL));
 
 	for(int it=0; it < ITERS; it++) {
-		create_random_list<T>(h_data, N, 0);
+		create_random_array<T>(h_data, N, 0);
 
 		cudaMemcpy(d_data, h_data, N*sizeof(T), cudaMemcpyHostToDevice);
 

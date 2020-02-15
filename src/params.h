@@ -17,7 +17,7 @@
 
 #ifndef params_h
 	#define params_h
-#define K 4 // Branching factor (lists merged per round)
+#define K 4 // Branching factor (arrays merged per round)
 #define PL 2 // Log of K
 #define PIPELINE 1 // Set to 1 to enable pipelining heap merging
 

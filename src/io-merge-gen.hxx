@@ -132,14 +132,14 @@ __forceinline__ __device__ T mergeIntoReg(T* heap, int minNode, int maxNode) {
 	return aVal;
 }
 
-// Method to read a block of B elements from an input list and storing it in the leaf of our heap
+// Method to read a block of B elements from an input array and storing it in the leaf of our heap
 template<typename T>
-__forceinline__ __device__ void fillEmptyLeaf(T* input, T* heap, int listNum, int* start, int* end, int size, int tid) {
-	heap[((K-1+listNum)*B)+tid] = MAXVAL;
-	if(start[listNum]+tid < end[listNum]) {
-		heap[((K-1+listNum)*B)+tid] = input[start[listNum]+(size*listNum)+tid];
+__forceinline__ __device__ void fillEmptyLeaf(T* input, T* heap, int arrayNum, int* start, int* end, int size, int tid) {
+	heap[((K-1+arrayNum)*B)+tid] = MAXVAL;
+	if(start[arrayNum]+tid < end[arrayNum]) {
+		heap[((K-1+arrayNum)*B)+tid] = input[start[arrayNum]+(size*arrayNum)+tid];
 		if(tid==0)
-			start[listNum] += B;
+			start[arrayNum] += B;
 	}
 }
 
@@ -282,7 +282,7 @@ __device__ void buildHeap(T* input, T* heap, int* start, int* end, int size, int
 	}
 }
 
-// Merge K lists into one using 1 warp
+// Merge K arrays into one using 1 warp
 template<typename T, fptr_t f>
 __device__ void multimerge(T* input, T* output, int* start, int* end, int size, int outputOffset) {
 	int warpInBlock = threadIdx.x>>5;
@@ -308,7 +308,7 @@ __device__ void multimerge(T* input, T* output, int* start, int* end, int size, 
 	}
 }
 
-// Merge K lists into one using 1 warp
+// Merge K arrays into one using 1 warp
 template<typename T, fptr_t f>
 __device__ void multimergePipeline(T* input, T* output, int* start, int* end, int size, int outputOffset) {
 	int warpInBlock = threadIdx.x>>5;
@@ -343,7 +343,7 @@ __device__ void blockBuildHeap(T* input, T* heap, int* start, int* end, int size
 }
 
 template<typename T>
-__device__ int findListToRead(T* heap, int LOGK) {
+__device__ int findArrayToRead(T* heap, int LOGK) {
 	int nodeIdx=0;
 	for(int i=0; i<LOGK-1; i++) {
 		nodeIdx = 2*nodeIdx + 1;
@@ -393,18 +393,18 @@ __device__ void blockMultimerge(T* input, T* output, int* start, int* end, int s
 		}
 	}
 	else if(warpInBlock == LOGK){
-		int listNum;
+		int arrayNum;
 		T readVal;
 		while(heap[0]!=MAXVAL) {
 			readVal = MAXVAL;
-			listNum = findListToRead<T>(heap, LOGK); // search down to leaf
+			arrayNum = findArrayToRead<T>(heap, LOGK); // search down to leaf
 			// read in new leaf to register
-			if(start[listNum]+tid < end[listNum]) {
-				readVal = input[start[listNum]+(size*listNum)+tid];
+			if(start[arrayNum]+tid < end[arrayNum]) {
+				readVal = input[start[arrayNum]+(size*arrayNum)+tid];
 			} 
-			start[listNum] += B;
+			start[arrayNum] += B;
 			__syncthreads();
-			heap[(K-1+listNum)*B+tid] = readVal;   // write register to heap node
+			heap[(K-1+arrayNum)*B+tid] = readVal;   // write register to heap node
 			__syncthreads();
 		}
 	}
