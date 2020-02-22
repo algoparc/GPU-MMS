@@ -30,8 +30,13 @@
 
 
 
-/*	Parameters
- *	warpIdInTask = warpIdx - myTask*warpsPerTask;
+/*	warpPartition finds the pivots for a small section of the data.
+ *  T - the data type of the values in the arrays
+ *	data - an array of unsorted values (on the GPU)
+ *	tempPivots - an array of points in the data that dictate where the merging happens	
+ *	size - the size of the arrays that are being merged at this level of the mergesort
+ *	warpsPerTask - 
+ *	warpIdInTask - 
  */
 
 // Find a set of pivots for a given partition
@@ -47,13 +52,9 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 	__shared__ T candidates[K*WARPS]; // K = 4 candidates
 	__shared__ int partitionVal[WARPS]; // just 1 value
 
-	// if (threadIdx.x == 0) {
-	// 	printf("targetPivot: %d\n", targetPivot);
-	// }
 
 	if(threadIdx.x < WARPS) { // aka threadIdx.x < 1
 		partitionVal[threadIdx.x] = (size*K)/2; // sets partitionVal[0] to 2048 for the 4096 case .. halfway point?
-		// printf("set partitionVal[%d] = %d\tsize = %d\tK = %d\n", threadIdx.x, (size*K)/2, size, K);
 	}
 
 	volatile  __shared__ int startBoundary[K*WARPS];
@@ -64,13 +65,11 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 		startBoundary[threadIdx.x] = 0;
 		endBoundary[threadIdx.x] = size-1;
 		tempPivots[tid] = size/2;
-		// printf("tempPivots[%d] = %d\n", tid, tempPivots[tid]);
 	}
 
 	// first warp of task begins at start of every array
 	if(warpIdInTask == 0 && tid < K) {
 		tempPivots[tid] = 0;
-		// printf("tempPivots[%d] = 0\n", tid);
 	}
 
 	__syncthreads();
@@ -81,7 +80,6 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 
 		// Set initial candidate values
 		if(tid < K) { // only uses the K lowest threads.. why?
-			// printf("warpPartition blockIdx: %d\t threadIdx: %d\n", blockIdx.x, threadIdx.x);
 			candidates[warpInBlock*K+tid] = data[size*tid + tempPivots[tid]]; // warpInBlock * K + tid = 0 * K + tid = tid, so candidates[tid]..?
 		}
 
@@ -92,14 +90,9 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 			partVal[warpInBlock]=MAXVAL;
 			int tempPartitionVal;
 			int iterIdx;
-			// minVal=0; // I think minVal and maxVal are set to arbitrary values since the next while loop always happens
-			// maxVal=1; // MIGHT DELETE THESE TWO LINES
 
 			while(partVal[warpInBlock] == MAXVAL) {
-				// if (blockIdx.x == 117) {
-				// 	printf("Made it into while loop. BlockIdx: %d\tThreadIdx: %d\n", blockIdx.x, threadIdx.x);
-				// }
-				
+				// Assign initial placeholder values for minVal and maxVal 
 				minVal=MAXVAL; // max and min 32 bit values defined in cmp.hxx (this is in int, so doesn't really match with template type T)
 				maxVal=MINVAL;
 				// find min and max - OPTIMIZE use K threads to do min and max reduction
@@ -117,47 +110,41 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 				}
 				// Move min and/or max candidates based on target order statistic
 				tempPartitionVal = partitionVal[warpInBlock];
-				// printf("partitionVal[%d]: %d\n", warpInBlock, tempPartitionVal);
 
 				// If we need to move min candidate
 				if(targetPivot >= tempPartitionVal) {
 					partitionVal[warpInBlock] += (endBoundary[warpInBlock*K + minIdx] - tempPivots[minIdx])/2; // Increase rank of current partition boundary
 					startBoundary[warpInBlock*K + minIdx] = tempPivots[minIdx];
 					tempPivots[minIdx]=(endBoundary[warpInBlock*K+minIdx]+startBoundary[warpInBlock*K+minIdx])/2;
-					// printf("tempPivots[%d] = %d\n", minIdx, tempPivots[minIdx]);
 					if(tempPivots[minIdx] == startBoundary[warpInBlock*K + minIdx]) { // Edge case
 						tempPivots[minIdx]++;
-						// printf("tempPivots[%d] = %d\n", minIdx, tempPivots[minIdx]);
 						partitionVal[warpInBlock]++;
 					}
 					candidates[warpInBlock*K + minIdx] = data[size*minIdx + tempPivots[minIdx]];
-					if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx] && tempPivots[minIdx] < size-1) 
-//          {
+					if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx] && tempPivots[minIdx] < size-1) {
 						partVal[warpInBlock] = candidates[warpInBlock*K + minIdx];
-						partArray[warpInBlock] = minIdx;
-//          }
+					}
+					partArray[warpInBlock] = minIdx;
 				} 
 				else { // If we need to move max candidate
 					partitionVal[warpInBlock] -= (tempPivots[maxIdx] - startBoundary[warpInBlock*K + maxIdx])/2; // Increase rank of current partition boundary
 					endBoundary[warpInBlock*K + maxIdx] = tempPivots[maxIdx];
 					tempPivots[maxIdx]=(endBoundary[warpInBlock*K+maxIdx]+startBoundary[warpInBlock*K+maxIdx])/2;
-					// printf("tempPivots[%d] = %d\n", maxIdx, tempPivots[maxIdx]);
 					candidates[warpInBlock*K + maxIdx] = data[size*maxIdx + tempPivots[maxIdx]];
-					if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0) 
- //         {
+					if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0) {
 						partVal[warpInBlock] = candidates[warpInBlock*K + maxIdx];
-						partArray[warpInBlock] = maxIdx;
+					}
+					partArray[warpInBlock] = maxIdx;
 				}
 			}
 		}
-		// Binary search each other array to find predecessor of partitioning value
 		__syncthreads();
 
+		// Binary search each other array to find predecessor of partitioning value
 		int step;
 		if(tid < K) {
 			if(tid != partArray[warpInBlock]) {
-				tempPivots[tid] = size/2;
-				// printf("tempPivots[%d] = %d\n", tid, tempPivots[tid]);
+				tempPivots[tid] = size/2; // Start with the halfway point
 				step = size/4;
 
 				while(step >= 1) {
@@ -165,8 +152,9 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 						tempPivots[tid] -= step;
 					else 
 						tempPivots[tid] += step;
-					step /=2;
+					step /=2; // Halve the step size after each iteration
 				}
+				// Update the pivots
 				if(tempPivots[tid] > 0 && cmp(partVal[warpInBlock], (data[size*tid + tempPivots[tid]-1])))
 					tempPivots[tid]--;
 				if(cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock]))
@@ -176,8 +164,17 @@ __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTa
 	}
 }
 
-// Find pivots K pivots for each warp within a 'task' (a group of K arrays)
-// Pivots define the start of the partition that each warp will work on merging
+/*	Find pivots K pivots for each warp within a 'task' (a group of K arrays).
+ *	Pivots define the start of the partition that each warp will work on merging.
+ *  T - the data type of the values in the arrays
+ *	data - an array of unsorted values (on the GPU)
+ *	output - an array that will contain the rearranged values from input after merging (on the GPU)
+ *	pivots - an array of points in the data that dictate where the merging happens	
+ *	size - the size of the arrays that are being merged at this level of the mergesort
+ *	tasks - the number of merges happening at this current level of the mergesort
+ *	P - the number of blocks used on the GPU
+ */
+
 template<typename T>
 __global__ void findPartitions(T* data, T*output, int* pivots, int size, int tasks, int P) {
 	__shared__ int myPivotsRaw[K*(THREADS/W)]; // size K when THREADS = W

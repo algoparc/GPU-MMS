@@ -130,6 +130,7 @@ void test_multimergesort(int p, int N) {
 		d_output = multimergesort<T,cmp>(d_data, d_output, h_data, p, new_N);
 		cudaDeviceSynchronize();
 
+		// Record the time it took to sort the array
 		cudaEventRecord(stop,0);
 		cudaEventSynchronize(stop);
 		cudaEventElapsedTime(&time_elapsed, start, stop);
@@ -148,8 +149,8 @@ void test_multimergesort(int p, int N) {
 	// copy sorted result back to CPU
 	cudaMemcpy(h_data, d_output, N*sizeof(T), cudaMemcpyDeviceToHost);
 
-	// If debug mode is on, check that output is correct
-#ifdef DEBUG
+	// If output debug mode is on, check that output is correct
+#ifdef OUTPUT_DEBUG
 	/*	Loop through the array and look for any adjacent elements that
 	 *	are not sorted in increasing order. Print these errors.
 	 *	Note: this only checks the last array if there are multiple (ITERS > 1).

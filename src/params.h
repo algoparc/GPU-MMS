@@ -29,8 +29,9 @@
 #define RANGE 1048576 // Range of randomly generated values
 #define ELTS 32
 
-#define DEBUG 1  // Set this to 1 to check that the output is correctly sorted
+// #define DEBUG 1  // Set this to 1 to check various processes in the program
 // #define PRINT_DEBUG 1 // Defining this adds a bunch of print statements that track progress through the program 
+#define OUTPUT_DEBUG 1 // Defining this checks if the output is sorted
 #define USE_PADDING 1 // Defining this allows padding of the input array to make the size M * K^i
 #define ITERS 1 // Number of iterations to compute average runtime
 #define BLOCKS 128

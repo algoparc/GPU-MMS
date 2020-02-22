@@ -267,8 +267,8 @@ __device__ void buildHeap(T* input, T* heap, int* start, int* end, int size, int
 	if(tid < K)
 		start[tid] += B;
 
-// Go through each level of the tree, merging children to make new nodes
-// each merge propagates down to leaf where a new block is taken from input
+	// Go through each level of the tree, merging children to make new nodes
+	// each merge propagates down to leaf where a new block is taken from input
 	int nodesAtLevel=K>>1;
 #pragma unroll
 	for(int i=1; nodesAtLevel > 0; i++) {
