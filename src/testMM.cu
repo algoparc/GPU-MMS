@@ -55,16 +55,32 @@ void test_multimergesort(int p, int N);
  *	(mainly used to test how sorting padded inputs can be sped up)
  */
 int main(void) {
+	// Test "nice values" ... values that fit M * K^i
+	// Test values that fit M * K^i + 1 because these pad the most at each "nice value level"
+
+	// 1024 * 4^1
 	test_multimergesort<DATATYPE>(BLOCKS, 4096);
 	test_multimergesort<DATATYPE>(BLOCKS, 4097);
+
+	// 1024 * 4^2
 	test_multimergesort<DATATYPE>(BLOCKS, 16384);
 	test_multimergesort<DATATYPE>(BLOCKS, 16385);
+	
+	// 1024 * 4^3
 	test_multimergesort<DATATYPE>(BLOCKS, 65536);
 	test_multimergesort<DATATYPE>(BLOCKS, 65537);
+	
+	// 1024 * 4^4
 	test_multimergesort<DATATYPE>(BLOCKS, 262144);
 	test_multimergesort<DATATYPE>(BLOCKS, 262145);
+	
+	// 1024 * 4^5
 	test_multimergesort<DATATYPE>(BLOCKS, 1048576);
 	test_multimergesort<DATATYPE>(BLOCKS, 1048577);
+
+	// 1024 * 4^6
+	test_multimergesort<DATATYPE>(BLOCKS, 4194304);
+	test_multimergesort<DATATYPE>(BLOCKS, 4194305);
 
 	#ifdef SKIP_PADDED_PARTITION
 	printf("SKIPPED PADDED PARTITION\t");
