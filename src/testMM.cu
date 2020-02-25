@@ -36,19 +36,58 @@ void test_multimergesort(int p, int N);
 /*	Main function
  *	Takes in one input, the size of the array to be sorted
  */
-int main(int argc, char** argv) {
+// int main(int argc, char** argv) {
 
-	if(argc != 2) {
-	printf("Usage: ./testMM <N>\n");
-	exit(1);
-	}
+// 	if(argc != 2) {
+// 	printf("Usage: ./testMM <N>\n");
+// 	exit(1);
+// 	}
 
-	// Test the sorting algorithm on a array of size N.
-	int N = atoi(argv[1]);
-	test_multimergesort<DATATYPE>(BLOCKS, N);
+// 	// Test the sorting algorithm on a array of size N.
+// 	int N = atoi(argv[1]);
+// 	test_multimergesort<DATATYPE>(BLOCKS, N);
 
+// 	return 0;
+// }
+
+
+/*	Secondary main function that tests a bunch of different input sizes
+ *	(mainly used to test how sorting padded inputs can be sped up)
+ */
+int main(void) {
+	test_multimergesort<DATATYPE>(BLOCKS, 4096);
+	test_multimergesort<DATATYPE>(BLOCKS, 4097);
+	test_multimergesort<DATATYPE>(BLOCKS, 16384);
+	test_multimergesort<DATATYPE>(BLOCKS, 16385);
+	test_multimergesort<DATATYPE>(BLOCKS, 65536);
+	test_multimergesort<DATATYPE>(BLOCKS, 65537);
+	test_multimergesort<DATATYPE>(BLOCKS, 262144);
+	test_multimergesort<DATATYPE>(BLOCKS, 262145);
+	test_multimergesort<DATATYPE>(BLOCKS, 1048576);
+	test_multimergesort<DATATYPE>(BLOCKS, 1048577);
+
+	#ifdef SKIP_PADDED_PARTITION
+	printf("SKIPPED PADDED PARTITION\t");
+	#endif
+
+	#ifndef SKIP_PADDED_PARTITION
+	printf("DID NOT SKIP PADDED PARTITION\t");
+	#endif
+	
+	#ifdef SKIP_PADDED_MERGE
+	printf("SKIPPED PADDED MERGE\n");
+	#endif
+	
+	#ifndef SKIP_PADDED_MERGE
+	printf("DID NOT SKIP PADDED MERGE\n");
+	#endif
+	
 	return 0;
 }
+
+
+
+
 
 /*	p - an integer describing the number of blocks used on the GPU
  *	N - an integer describing the size of array to be sorted
@@ -96,11 +135,13 @@ void test_multimergesort(int p, int N) {
 	// cudaMalloc(&d_output, new_N*sizeof(T));
 
 	// srand(time(NULL)); // pseudo-random seeding using time
-	srand(11); // consistent seeding at 11 for testing
+	srand(SEED); // consistent seeding at 11 for testing
 	for(int it=0; it<ITERS; it++) {
 
-		// Create random array of size N to be sorted
-		create_random_array<T>(h_data, N, 0);
+		// TEST ARRAYS
+		create_random_array<T>(h_data, N, 0); // Create random array of size N to be sorted
+		// create_test1_array<T>(h_data, N); // Create array of size N with mostly duplicate values
+
 		#ifdef USE_PADDING
 		// Pad the array with (new_N - N) elements. If N == new_N, no new elements are added.
 		pad_array<T>(h_data, N, new_N);

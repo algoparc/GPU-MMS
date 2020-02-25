@@ -48,7 +48,7 @@ void create_random_sorted_array(T* data, int size) {
 template<typename T>
 void create_random_array(T* data, int size, int min) {
 	// srand(time(NULL)); // pseudo-random seeding using time
-	srand(11); // consistent seeding at 11 for testing
+	// srand(56); // consistent seeding for testing
 	long temp;
 		// printf("size:%d\n", size);
 	for(int i=0; i<size; i++) {
@@ -60,6 +60,19 @@ void create_random_array(T* data, int size, int min) {
 	}
 }
 #endif
+
+
+/*	create_test1_array makes an array with almost all of the
+ *	same value to evaluate effect on partitioning.
+ */
+template<typename T>
+void create_test1_array(T * data, int size) {
+	for (int i = 0; i < size-2; i++) {
+		data[i] = RANGE/2;
+	}
+	data[size-2] = RANGE;
+	data[size-1] = RANGE;
+}
 
 
 /*	pad_array takes in an array of "current_size" elements and appends

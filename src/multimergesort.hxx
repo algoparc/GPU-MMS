@@ -220,6 +220,13 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
  */
 template<typename T, fptr_t f>
 __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks, int P) {
+	#ifdef SKIP_PADDED_MERGE
+	// If a padded section is reach, skip this step since all of the values in this section are the same.	
+	if (data[0] == RANGE) {
+		return;
+	}
+	#endif
+	
 	int totalWarps = P*(THREADS/W);
 	int warpInBlock = threadIdx.x/W;
 	int warpIdx = (blockIdx.x)*(THREADS/W)+warpInBlock;

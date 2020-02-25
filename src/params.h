@@ -33,7 +33,10 @@
 // #define PRINT_DEBUG 1 // Defining this adds a bunch of print statements that track progress through the program 
 #define OUTPUT_DEBUG 1 // Defining this checks if the output is sorted
 #define USE_PADDING 1 // Defining this allows padding of the input array to make the size M * K^i
-#define ITERS 1 // Number of iterations to compute average runtime
+#define SKIP_PADDED_PARTITION 1 // Define this to skip looking for pivots in padded sections since they are already sorted
+#define SKIP_PADDED_MERGE 1 // Define this to skip merging padded sections since they are already sorted
+#define SEED 15 // Seed used for random array creation
+#define ITERS 10 // Number of iterations to compute average runtime
 #define BLOCKS 128
 
 

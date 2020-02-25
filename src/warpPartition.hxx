@@ -42,6 +42,18 @@
 // Find a set of pivots for a given partition
 template<typename T>
 __device__ void warpPartition(T* data, int* tempPivots, int size, int warpsPerTask, int warpIdInTask) {
+	#ifdef SKIP_PADDED_PARTITION
+	// If a padded section is reach, skip this step since all of the values in this section are the same.	
+	if (data[0] == RANGE) {
+		// printf("RANGE VALUE FOUND AT START OF PARTITION\n");
+		// Still set evenly distributed pivots just in case..
+		for (int i = 0; i < K; i++) {
+			tempPivots[i] = i * (size/K);
+		}
+		return;
+	}
+	#endif
+
 	const int WARPS = THREADS/W; // this becomes 1?
 	int tid = threadIdx.x%W; // this is the same as threadIdx.x when W is 32
 	int warpInBlock = threadIdx.x/W; // always 0? b/c threadIdx.x is between 0 and 31?
