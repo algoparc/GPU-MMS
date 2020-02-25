@@ -106,8 +106,9 @@ __global__ void squareSort(T* data, int N) {
 		*/
 
 		// Sort the basecase section by using registers in a 32x32 pattern
-		sortSquareRowMajor<T,f>(regs, false);
-		
+		// if (regs[0] != RANGE) {
+			sortSquareRowMajor<T,f>(regs, false);
+		// }
 
 		// Warps within a block use the same shared memory, so they have to take turns transposing
 		// This lets us have more warps and increases performance!
