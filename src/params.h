@@ -30,7 +30,7 @@
 #define ELTS 32
 
 // #define DEBUG 1  // Set this to 1 to check various processes in the program
-// #define PRINT_DEBUG 1 // Defining this adds a bunch of print statements that track progress through the program 
+#define PRINT_DEBUG 1 // Defining this adds a bunch of print statements that track progress through the program 
 #define OUTPUT_DEBUG 1 // Defining this checks if the output is sorted
 #define USE_PADDING 1 // Defining this allows padding of the input array to make the size M * K^i
 #define SKIP_PADDED_PARTITION 1 // Define this to skip looking for pivots in padded sections since they are already sorted

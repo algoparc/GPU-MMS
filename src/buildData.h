@@ -49,14 +49,15 @@ template<typename T>
 void create_random_array(T* data, int size, int min) {
 	// srand(time(NULL)); // pseudo-random seeding using time
 	// srand(56); // consistent seeding for testing
-	long temp;
+	// long temp;
 		// printf("size:%d\n", size);
 	for(int i=0; i<size; i++) {
 	// data[i].key = rand()%RANGE + min;
 		// data[i].val = rand()%RANGE + min;
-		data[i] = (rand()%RANGE) + min + 1;
-		temp = rand()%RANGE + min + 1;
-			data[i] += (temp<<32);
+		// data[i] = (rand()%RANGE) + min + 1;
+		data[i] = (rand() % RANGE) + min + 1;
+		// temp = rand()%RANGE + min + 1;
+		// 	data[i] += (temp<<32);
 	}
 }
 #endif
@@ -83,6 +84,6 @@ template<typename T>
 void pad_array(T * data, int current_size, int new_size) {
 	// iterates from the index of current_size and fills up the rest of the array
 	for (int i = current_size; i < new_size; i++) {
-		data[i] = RANGE;
+		data[i] = RANGE + 1;
 	}
 }

@@ -26,12 +26,16 @@
 	#include <algorithm>
 	#include "multimergesort.hxx"
 	#include "buildData.h"
+	using namespace std;
 #endif
 
 
 /* CPU FUNCTION HEADERS*/
 template<typename T>
 void test_multimergesort(int p, int N);
+
+template<typename T, fptr_t f>
+void test_squareSort(int N);
 
 /*	Main function to test either a single input size
  *	or test a whole seires of input sizes.
@@ -43,6 +47,7 @@ int main(int argc, char** argv) {
 	exit(1);
 	}
 
+
 	if (argc == 2) { // SINGLE INPUT
 		// Test the sorting algorithm on a single array of size N.
 		int N = atoi(argv[1]);
@@ -51,7 +56,7 @@ int main(int argc, char** argv) {
 
 	if (argc == 1) { // MULTIPLE TESTS
 		// Test "nice values" ... values that fit M * K^i
-		// Test values that fit M * K^i + 1 because these pad the most at each "nice value level"
+		// Test values that fit M * K^i + 1 because these pad the most to reach the next "nice value"
 
 		// 1024 * 4^1
 		test_multimergesort<DATATYPE>(BLOCKS, 4096);
@@ -98,95 +103,6 @@ int main(int argc, char** argv) {
 }
 
 
-
-/*	Main function to test any input size from the user
- *	Takes in one input, the size of the array to be sorted
- */
-// int main(int argc, char** argv) {
-
-// 	if(argc != 2) {
-// 	printf("Usage: ./testMM <N>\n");
-// 	exit(1);
-// 	}
-
-// 	// Test the sorting algorithm on a array of size N.
-// 	int N = atoi(argv[1]);
-// 	test_multimergesort<DATATYPE>(BLOCKS, N);
-
-// 	#ifdef SKIP_PADDED_PARTITION
-// 	printf("SKIPPED PADDED PARTITION\t");
-// 	#endif
-
-// 	#ifndef SKIP_PADDED_PARTITION
-// 	printf("DID NOT SKIP PADDED PARTITION\t");
-// 	#endif
-	
-// 	#ifdef SKIP_PADDED_MERGE
-// 	printf("SKIPPED PADDED MERGE\n");
-// 	#endif
-	
-// 	#ifndef SKIP_PADDED_MERGE
-// 	printf("DID NOT SKIP PADDED MERGE\n");
-// 	#endif
-
-// 	return 0;
-// }
-
-
-/*	Secondary main function that tests a bunch of different input sizes
- *	(mainly used to test how sorting padded inputs can be sped up)
- */
-// int main(void) {
-// 	// Test "nice values" ... values that fit M * K^i
-// 	// Test values that fit M * K^i + 1 because these pad the most at each "nice value level"
-
-// 	// 1024 * 4^1
-// 	test_multimergesort<DATATYPE>(BLOCKS, 4096);
-// 	test_multimergesort<DATATYPE>(BLOCKS, 4097);
-
-// 	// 1024 * 4^2
-// 	test_multimergesort<DATATYPE>(BLOCKS, 16384);
-// 	test_multimergesort<DATATYPE>(BLOCKS, 16385);
-	
-// 	// 1024 * 4^3
-// 	test_multimergesort<DATATYPE>(BLOCKS, 65536);
-// 	test_multimergesort<DATATYPE>(BLOCKS, 65537);
-	
-// 	// 1024 * 4^4
-// 	test_multimergesort<DATATYPE>(BLOCKS, 262144);
-// 	test_multimergesort<DATATYPE>(BLOCKS, 262145);
-	
-// 	// 1024 * 4^5
-// 	test_multimergesort<DATATYPE>(BLOCKS, 1048576);
-// 	test_multimergesort<DATATYPE>(BLOCKS, 1048577);
-
-// 	// 1024 * 4^6
-// 	test_multimergesort<DATATYPE>(BLOCKS, 4194304);
-// 	test_multimergesort<DATATYPE>(BLOCKS, 4194305);
-
-// 	#ifdef SKIP_PADDED_PARTITION
-// 	printf("SKIPPED PADDED PARTITION\t");
-// 	#endif
-
-// 	#ifndef SKIP_PADDED_PARTITION
-// 	printf("DID NOT SKIP PADDED PARTITION\t");
-// 	#endif
-	
-// 	#ifdef SKIP_PADDED_MERGE
-// 	printf("SKIPPED PADDED MERGE\n");
-// 	#endif
-	
-// 	#ifndef SKIP_PADDED_MERGE
-// 	printf("DID NOT SKIP PADDED MERGE\n");
-// 	#endif
-	
-// 	return 0;
-// }
-
-
-
-
-
 /*	p - an integer describing the number of blocks used on the GPU
  *	N - an integer describing the size of array to be sorted
  *	This function creates a array of size N and sorts it using a
@@ -202,6 +118,12 @@ void test_multimergesort(int p, int N) {
 	float maxTime=0.0;
 	float total_time=0.0;
 
+	// Create file streams to write out the input and output
+	ofstream input_file;
+	ofstream output_file;
+	input_file.open("input.txt");
+	output_file.open("output.txt");
+
 
 	/*	Possible fix: Figure out if the array needs to be padded with extra values
 	 *	so that its size will match M * K^i (only necessary for N > 1024 (M?)).
@@ -209,12 +131,10 @@ void test_multimergesort(int p, int N) {
 	 */
 	int new_N = N; // make a new value of N for padding
 	#ifdef USE_PADDING
-	if (N > M) {
-		// Keep incrementing new_N by a factor of K until it is greater or equal to N
-		new_N = M * K;
-		while (new_N < N) {
-			new_N *= K;
-		}
+	// Keep incrementing new_N by a factor of K until it is greater or equal to N
+	new_N = M;
+	while (new_N < N) {
+		new_N *= K;
 	}
 	#endif
 
@@ -247,8 +167,13 @@ void test_multimergesort(int p, int N) {
 
 		#ifdef PRINT_DEBUG
 		// Print the unsorted, padded array
-		for (int i = 0; i < new_N; i++) {
-			printf("%d\t%d\n", i, h_data[i]);
+		if (it == ITERS - 1) {
+			printf("UNSORTED ARRAY\n");
+			for (int i = 0; i < new_N; i++) {
+				printf("%d\t%d\n", i, h_data[i]);
+				input_file << i << "\t" << h_data[i] << "\n";
+			}
+			printf("\n");
 		}
 		#endif
 
@@ -313,6 +238,7 @@ void test_multimergesort(int p, int N) {
 		// If the array is sorted, print it out.
 		for (int i = 0; i < N; i++) {
 			printf("%d\t%d\n", i, h_data[i]);
+			output_file << i << "\t" << h_data[i] << "\n";
 		}
 		#endif
 		printf("SORTED!\n");
@@ -323,11 +249,16 @@ void test_multimergesort(int p, int N) {
 	cudaFree(d_data);
 	cudaFree(d_output);
 	free(h_data);
+
+	// Close file streams
+	input_file.close();
+	output_file.close();
+
 }
 
 
 // Function to test just the basecase method
-template<typename T>
+template<typename T, fptr_t f>
 void test_squareSort(int N) {
 
 	cudaEvent_t start, stop;
@@ -348,7 +279,7 @@ void test_squareSort(int N) {
 		cudaEventCreate(&stop);
 		cudaEventRecord(start, 0);
 
-		squareSort<T><<<BLOCKS,THREADS>>>(d_data);
+		squareSort<T,f><<<BLOCKS,THREADS>>>(d_data, N);
 		cudaDeviceSynchronize();
 		cudaEventRecord(stop,0);
 		cudaEventSynchronize(stop);
@@ -365,9 +296,15 @@ void test_squareSort(int N) {
 	bool sorted=true;
 	for(int j=0; j<N; j+=M) {
 		for(int i=1; i<M; i++) {
-			if(cmp(h_data[i+j], h_data[j+i-1]))
+			if(host_cmp(h_data[i+j], h_data[j+i-1]))
 				sorted=false;
 		} 
 	}
-	if(!sorted) printf("NOT SORTED\n");
+	if(!sorted) {
+		printf("NOT SORTED\n");
+	}
+	else {
+		printf("SORTED\n");
+	}
+
 }

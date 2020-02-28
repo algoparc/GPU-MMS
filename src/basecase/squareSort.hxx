@@ -77,12 +77,12 @@ __global__ void squareSort(T* data, int N) {
 		// Load a section of the global data to be sorted on the registers
 		for(int i=0; i<ELTS; i++) {
 			// printf("%d\n", blockOffset + sec + (i*THREADS) + threadIdx.x);
-			if ((blockOffset + sec + (i*THREADS) + threadIdx.x) >= N) { // edge case to avoid segmentation faults
-				regs[i] = RANGE;
-			}
-			else {
+			// if ((blockOffset + sec + (i*THREADS) + threadIdx.x) >= N) { // edge case to avoid segmentation faults
+			// 	regs[i] = RANGE;
+			// }
+			// else {
 				regs[i] = data[blockOffset + sec + (i*THREADS) + threadIdx.x];
-			}
+			// }
 		}
 		
 		// Calculate more values that are used for indexing

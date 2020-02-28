@@ -200,13 +200,13 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int tas
 	int warpIdInTask;
 	int totalWarps = P*(THREADS/W);
 
-	#ifdef PRINT_DEBUG
+	#ifdef PRINT_DEBUG_2
 	printf("FindPartition blockIdx: %d\t threadIdx: %d\n", blockIdx.x, threadIdx.x);
 	#endif
 
 	warpsPerTask = totalWarps/tasks; // floor
 	if(warpsPerTask <= 1) {
-		#ifdef PRINT_DEBUG
+		#ifdef PRINT_DEBUG_2
 		printf("warpsPerTasks LESS than 1\ttotalWarps: %d\ttasks: %d\n", totalWarps, tasks);
 		#endif
 
@@ -218,13 +218,13 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int tas
 		}
 	}
 	else {
-		#ifdef PRINT_DEBUG
+		#ifdef PRINT_DEBUG_2
 		printf("warpsPerTasks GREATER than 1\ttotalWarps: %d\ttasks: %d\n", totalWarps, tasks);
 		#endif
 
 		myTask = warpIdx / warpsPerTask; // If we have extra warps, just have them do no work...
 		
-		#ifdef PRINT_DEBUG
+		#ifdef PRINT_DEBUG_2
 		if (myTask >= tasks) { // why do we just ignore the extra warps?
 			printf("myTask: %d\ttasks: %d\n", myTask, tasks);
 		}
@@ -234,7 +234,7 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int tas
 			taskOffset = myTask*size*(K); // How does changing this change the size of the partitions
 			warpIdInTask = warpIdx - myTask*warpsPerTask;
 			
-			#ifdef PRINT_DEBUG
+			#ifdef PRINT_DEBUG_2
 			if (size == 1024) {
 				printf("taskOffset: %d\tmyTask: %d\ttasks: %d\tsize: %d\tK: %d\n", taskOffset, myTask, tasks, size, K);
 			}
@@ -258,7 +258,7 @@ void __global__ testPartitioning(T* data, int* pivots, int size, int tasks, int 
 	int warpsPerTask;
 	int totalWarps = P*(THREADS/W);
 	warpsPerTask = totalWarps/tasks; // floor
-	#ifdef PRINT_DEBUG
+	#ifdef PRINT_DEBUG_2
 	printf("Made it in testPartitioning\n");
 	#endif
 	if(threadIdx.x==0 && blockIdx.x==0) {
@@ -281,12 +281,12 @@ void __global__ testPartitioning(T* data, int* pivots, int size, int tasks, int 
 			printf("Partitioning FAILED\n");
 		}
 		else {
-			#ifdef PRINT_DEBUG
+			#ifdef PRINT_DEBUG_2
 			printf("Partitioning SUCCEEDED\n");
 			#endif
 		}
 	}
-	#ifdef PRINT_DEBUG
+	#ifdef PRINT_DEBUG_2
 	printf("Finished testing partitioning.\n");
 	#endif
 }
