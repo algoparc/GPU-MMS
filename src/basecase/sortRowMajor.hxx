@@ -37,7 +37,7 @@ void test_shflMerge();
 template<typename T>
 __forceinline__ __device__ T shfl_wrapper(T val, int dist, int width) {
   T tempObj;
-  tempObj = __shfl_xor((CASTTYPE)val, dist, width);
+  tempObj = SHFL_XOR((CASTTYPE)val, dist, width);
   return tempObj;
 }
 

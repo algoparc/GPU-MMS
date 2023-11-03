@@ -5,10 +5,11 @@ GENCODE_SM20	:= -gencode arch=compute_20,code=sm_20
 GENCODE_SM30	:= -gencode arch=compute_30,code=sm_30
 #GENCODE_SM52	:= -gencode arch=compute_52,code=sm_52
 GENCODE_SM52	:= -arch compute_52 -code sm_52
+GENCODE_SM86    := -gencode arch=compute_86,code=sm_86 -Xlinker -pie 
 
 #UPDATE THE GENCODE HERE FOR YOUR PARTICULAR HARDWARE
 
-OPTIONS=-std=c++11 -O3  -lineinfo -use_fast_math --expt-extended-lambda -Xptxas -dlcm=cg --maxrregcount=60 -lcudart -D_FORCE_INLINES $(GENCODE_SM30)
+OPTIONS=-std=c++11 -O3  -lineinfo -use_fast_math --expt-extended-lambda -Xptxas -dlcm=cg --maxrregcount=60 -lcudart -D_FORCE_INLINES $(GENCODE_SM86)
 
 
 default: testMM
