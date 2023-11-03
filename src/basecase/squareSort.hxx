@@ -62,7 +62,7 @@ __global__ void squareSort(T* data, int N) {
 
   int blockOffset = (N/gridDim.x)*blockIdx.x;
 
-  for(int sec = 0; sec < (N/gridDim.x); sec += M*(THREADS/W)) { // doesn't make sense, N/gridDim is the 
+  for(int sec = 0; sec < (N/gridDim.x); sec += M*(THREADS/W)) { // iterates until you hit the upper bound of N/gridDim.x which is the number of ELTS processed per block 
     for(int i=0; i<ELTS; i++) {
       regs[i] = data[blockOffset + sec + (i*THREADS) + threadIdx.x];
     }
