@@ -158,7 +158,7 @@ for(int it=0; it < ITERS; it++) {
   cudaEventCreate(&stop);
   cudaEventRecord(start, 0);
 
-  squareSort<T, cmp><<<((N/M)/(THREADS/W)),THREADS>>>(d_data, N); // number of blocks was initially BLOCKS, but incorrect.
+  squareSort<T, cmp><<<((N/M)/(THREADS/W)),THREADS>>>(d_data, N); // number of blocks was initially BLOCKS, but that was incorrect. squareSort is implemented to have grid dimensions that scale with input size
   cudaDeviceSynchronize();
   cudaEventRecord(stop,0);
   cudaEventSynchronize(stop);

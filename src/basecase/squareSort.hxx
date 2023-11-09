@@ -54,7 +54,11 @@ void printResult(int* data) {
   }
 }
 
-/* Main basecase sorting Kernel */
+/* 
+   Main basecase sorting Kernel.
+   Successfully sorts for input sizes
+   that are multiples of M.
+*/
 template<typename T, fptr_t f>
 __global__ void squareSort(T* data, int N) {
   T regs[ELTS];

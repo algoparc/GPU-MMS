@@ -44,6 +44,17 @@ __global__ void print_count() {
 }
 
 /* Main CPU function that sorts an input and writes the result to output */
+/*
+   Parameters:
+     T* input:    The DEVICE array input to merge
+     T* output:   The DEVICE array output
+     T* h_data:   The same array as input, but hosted on the deice
+     P:           An integer representing the number of blocks to launch in our grid
+     N:           The size of the array to merge
+   Notes:
+     For the base case, we use an integer number of blocks that is different from P.
+     P is the number of blocks to use for every kernel launch except our base case.
+*/
 template<typename T, fptr_t f>
 T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   int WARPS = P*(THREADS/W);
@@ -63,11 +74,13 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 // Check that basecase properly sorted if in DEBUG mode
   bool correct=true;
   cudaMemcpy(h_data, input, N*sizeof(T), cudaMemcpyDeviceToHost);
-  printf("[%d", h_data[0]);
-  for (int i = 1; i < M; i++)
-    printf(", %d", h_data[i]);
-  printf("]\n");
 #ifdef DEBUG
+  #if PRINT == 1
+    printf("[%d", h_data[0]);
+    for (int i = 1; i < M; i++)
+      printf(", %d", h_data[i]);
+    printf("]\n");
+  #endif
 
   for(int i=0; i<N/M; i++) {
     for(int j=1; j<M; j++) {
