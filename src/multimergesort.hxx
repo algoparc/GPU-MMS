@@ -61,13 +61,13 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   squareSort<T,f><<<baseBlocks,THREADS>>>(input, N);
 
 // Check that basecase properly sorted if in DEBUG mode
-#ifdef DEBUG
   bool correct=true;
   cudaMemcpy(h_data, input, N*sizeof(T), cudaMemcpyDeviceToHost);
   printf("[%d", h_data[0]);
   for (int i = 1; i < M; i++)
     printf(", %d", h_data[i]);
   printf("]\n");
+#ifdef DEBUG
 
   for(int i=0; i<N/M; i++) {
     for(int j=1; j<M; j++) {

@@ -27,8 +27,8 @@
 #include"buildData.h"
 
 #define DEBUG 1  // Set this to 1 to check that the output is correctly sorted
-#define PRINT 1  // Set this to 1 to print first M elements of the array for further debugging
-#define ITERS 2 // Number of iterations to compute average runtime
+#define PRINT 0  // Set this to 1 to print first M elements of the array for further debugging
+#define ITERS 1 // Number of iterations to compute average runtime
 #define BLOCKS 128
 
 /* CPU FUNCTION HEADERS*/
@@ -158,7 +158,7 @@ for(int it=0; it < ITERS; it++) {
   cudaEventCreate(&stop);
   cudaEventRecord(start, 0);
 
-  squareSort<T, cmp><<<BLOCKS,THREADS>>>(d_data, N);
+  squareSort<T, cmp><<<((N/M)/(THREADS/W)),THREADS>>>(d_data, N); // number of blocks was initially BLOCKS, but incorrect.
   cudaDeviceSynchronize();
   cudaEventRecord(stop,0);
   cudaEventSynchronize(stop);
@@ -183,7 +183,7 @@ printf("\n");
 
   for(int j=0; j<N; j+=M) {
     for(int i=1; i<M; i++) {
-      if(host_cmp<int>(h_data[i+j], h_data[j+i-1]))
+      if(i+j<N && host_cmp<int>(h_data[i+j], h_data[j+i-1]))
         sorted=false;
     } 
   }
