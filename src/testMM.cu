@@ -46,8 +46,8 @@ int main(int argc, char** argv) {
   }
 
   int N = atoi(argv[1]);
-  test_multimergesort<DATATYPE>(BLOCKS, N);
-  // test_squareSort<DATATYPE>(N);
+  // test_multimergesort<DATATYPE>(BLOCKS, N);
+  test_squareSort<DATATYPE>(N);
 
   return 0;
 }
@@ -122,7 +122,7 @@ printf("%lf %lf %lf\n", total_time, minTime, maxTime);
     printf("NOT SORTED!\n");
   else
     printf("SORTED!\n");
-#ifdef PRINT
+#if PRINT == 1
   printf("[%d", h_data[0]);
   for (int i = 1; i < M; i++)
     printf(", %d", h_data[i]);
@@ -173,23 +173,21 @@ printf("\n");
   cudaMemcpy(h_data, d_data, N*sizeof(T), cudaMemcpyDeviceToHost);
 
   bool sorted=true;
-  printf("%d\n", sorted);
 
-#ifdef DEBUG
+#if PRINT == 1
   printf("[%d", h_data[0]);
   for (int i = 1; i < N; i++)
     printf(", %d", h_data[i]);
   printf("]\n");
 #endif
 
-  printf("%d, %d\n", N, M);
   for(int j=0; j<N; j+=M) {
     for(int i=1; i<M; i++) {
-      if(cmp(h_data[i+j], h_data[j+i-1]))
+      if(host_cmp<int>(h_data[i+j], h_data[j+i-1]))
         sorted=false;
     } 
   }
-  if(sorted) {
+  if(!sorted) {
     printf("NOT SORTED\n");
   } else { 
     printf("SORTED!\n");

@@ -71,7 +71,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
   for(int i=0; i<N/M; i++) {
     for(int j=1; j<M; j++) {
-      if(f(h_data[i*M+(j)], h_data[i*M+(j-1)])) {
+      if(f(h_data[i*M+(j)], h_data[i*M+(j-1)])) { // invalid because f is a DEVICE function and not a host function
         correct=false;
       }
     }
