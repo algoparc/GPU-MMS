@@ -27,12 +27,15 @@
 #include"buildData.h"
 
 #define DEBUG 1  // Set this to 1 to check that the output is correctly sorted
+#define PRINT 1  // Set this to 1 to print first M elements of the array for further debugging
 #define ITERS 2 // Number of iterations to compute average runtime
 #define BLOCKS 128
 
 /* CPU FUNCTION HEADERS*/
 template<typename T>
 void test_multimergesort(int p, int N);
+template<typename T>
+void test_squareSort(int N);
 
 
 int main(int argc, char** argv) {
@@ -44,6 +47,7 @@ int main(int argc, char** argv) {
 
   int N = atoi(argv[1]);
   test_multimergesort<DATATYPE>(BLOCKS, N);
+  // test_squareSort<DATATYPE>(N);
 
   return 0;
 }
@@ -118,6 +122,12 @@ printf("%lf %lf %lf\n", total_time, minTime, maxTime);
     printf("NOT SORTED!\n");
   else
     printf("SORTED!\n");
+#ifdef PRINT
+  printf("[%d", h_data[0]);
+  for (int i = 1; i < M; i++)
+    printf(", %d", h_data[i]);
+  printf("]\n");
+#endif
 #endif
 
   cudaFree(d_data);
@@ -148,7 +158,7 @@ for(int it=0; it < ITERS; it++) {
   cudaEventCreate(&stop);
   cudaEventRecord(start, 0);
 
-  squareSort<T><<<BLOCKS,THREADS>>>(d_data);
+  squareSort<T, cmp><<<BLOCKS,THREADS>>>(d_data, N);
   cudaDeviceSynchronize();
   cudaEventRecord(stop,0);
   cudaEventSynchronize(stop);
@@ -163,11 +173,25 @@ printf("\n");
   cudaMemcpy(h_data, d_data, N*sizeof(T), cudaMemcpyDeviceToHost);
 
   bool sorted=true;
+  printf("%d\n", sorted);
+
+#ifdef DEBUG
+  printf("[%d", h_data[0]);
+  for (int i = 1; i < N; i++)
+    printf(", %d", h_data[i]);
+  printf("]\n");
+#endif
+
+  printf("%d, %d\n", N, M);
   for(int j=0; j<N; j+=M) {
     for(int i=1; i<M; i++) {
       if(cmp(h_data[i+j], h_data[j+i-1]))
         sorted=false;
     } 
   }
-  if(!sorted) printf("NOT SORTED\n");
+  if(sorted) {
+    printf("NOT SORTED\n");
+  } else { 
+    printf("SORTED!\n");
+  }
 }

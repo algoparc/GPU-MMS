@@ -118,7 +118,13 @@ __forceinline__ __device__ void bitonicSort32(T* regs, bool dir) {
   if(dir) reverse32Elts<T>(regs);
 }
 
-
+// mergeX means merging two arrays of X to form one large array of 2X items
+// down evaluates to true if threadID is is even, otherwise false
+// order evaluates to true if the pair of threads 2 bit is on. i.e., if the thread IDs are 2,3,6,7,10,11,14,15,18,19,22,23,26,27,30,31
+// down ^ order evaluates to true if exactly one of down or order are true
+// In this case, down ^ order is true if thread ID is == 3 (mod 4) or 0 (mod 4)
+// if alt is true, then down evaluates to true if threadID is odd
+// then down ^ order is true if thread ID is 1 (mod 4) or 2 (mod 4)
 template<typename T, fptr_t f>
 __forceinline__ __device__ void merge32(T* regs, bool alt) {
   bool down = (threadIdx.x < (threadIdx.x ^ 1))^alt;
@@ -128,7 +134,7 @@ __forceinline__ __device__ void merge32(T* regs, bool alt) {
 
   for(int i=0; i<ELTS; i++) {
     val=regs[i];
-    temp = shfl_wrapper(val, 1, W);
+    temp = shfl_wrapper(val, 1, W); // get the item from the register a distance 1 away. Essentially, compare (0, 1), (2, 3), (4, 5), ...
     if(down ^ order)
       regs[i] = myMin<T,f>(val,temp);
     else

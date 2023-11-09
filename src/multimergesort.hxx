@@ -27,8 +27,6 @@
 #include "io-merge-gen.hxx"
 #include "warp-partition.hxx"
 
-
-
 // Function that does a single level of multiway mergesort
 template<typename T, fptr_t f>
 __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks, int P);
@@ -66,6 +64,10 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 #ifdef DEBUG
   bool correct=true;
   cudaMemcpy(h_data, input, N*sizeof(T), cudaMemcpyDeviceToHost);
+  printf("[%d", h_data[0]);
+  for (int i = 1; i < M; i++)
+    printf(", %d", h_data[i]);
+  printf("]\n");
 
   for(int i=0; i<N/M; i++) {
     for(int j=1; j<M; j++) {
@@ -75,6 +77,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     }
   }
   if(!correct) printf("base case not sorted!\n");
+  else printf("base case was sorted!\n");
 #endif
 
 // Perform successive merge rounds

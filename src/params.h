@@ -28,9 +28,9 @@
 #define RANGE 1048576 // Range of randomly generated values
 #define ELTS 32
 
-#define FULL_MASK 0xFFFFFFFF
+#define FULL_MASK 0xFFFFFFFF // Full mask used for sync mask parameter
 
-#if defined(__CUDACC_VER_MAJOR__) && defined(__CUDACC_VER_MINOR__)
+#if defined(__CUDACC_VER_MAJOR__) // && defined(__CUDACC_VER_MINOR__)
 // Check if the CUDA version is 9.0 or later
 #if (__CUDACC_VER_MAJOR__ >= 9)
 #define SHFL_XOR(val, delta, width) __shfl_xor_sync(FULL_MASK, val, delta, width)
