@@ -306,6 +306,8 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
     fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
   }
 
+  __syncwarp();
+
   if(heap[tid] != MAXVAL) {
     output[outputIdx] = heap[tid];
   }

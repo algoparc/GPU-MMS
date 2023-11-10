@@ -102,6 +102,7 @@ void test_multimergesort(int p, int N) {
   float total_time=0.0;
 
 srand(time(NULL));
+
 for(int it=0; it<ITERS; it++) {
 
 // Create random list to be sorted
@@ -160,14 +161,15 @@ printf("%lf %lf %lf\n", total_time, minTime, maxTime);
   int greatest_power_of_K = 1024;
   bool error_with_subarrays = false;
   int erroneous_index_subarrays = -1;
-  if (greatest_power_of_K * 4 <= N)
-    greatest_power_of_K <<= 2;
+  if (greatest_power_of_K*K <= N)
+    greatest_power_of_K <<= 2; // where 2 is log(K)
   for (int i = 0; i < N; i += greatest_power_of_K){
     for (int j = 1; j < greatest_power_of_K; j++){
       if (i + j < N){
         if (host_cmp<int>(h_data[i+j], h_data[i+j-1]))
           error_with_subarrays = true;
-          erroneous_index_subarrays = i + j;
+          erroneous_index_subarrays = i+j;
+          break;
       }
     }
   }
@@ -202,7 +204,7 @@ void test_squareSort(int N) {
   T* h_data = (T*)malloc(N*sizeof(T));
   T* d_data;
   cudaMalloc(&d_data, N*sizeof(T));
-  srand(time(NULL));
+  srand(time(NULL)); 
 
 for(int it=0; it < ITERS; it++) {
   create_random_list<T>(h_data, N, 0);
