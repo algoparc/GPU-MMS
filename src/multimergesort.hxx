@@ -43,12 +43,11 @@ __global__ void print_count() {
   if(threadIdx.x==0 && blockIdx.x==0) printf("cmps:%d\n", tot_cmp);
 }
 
-/* Main CPU function that sorts an input and writes the result to output */
-/*
+/* Main CPU function that sorts an input and writes the result to output 
    Parameters:
      T* input:    The DEVICE array input to merge
      T* output:   The DEVICE array output
-     T* h_data:   The same array as input, but hosted on the deice
+     T* h_data:   The same array values as input, but exists on the host
      P:           An integer representing the number of blocks to launch in our grid
      N:           The size of the array to merge
    Notes:
@@ -93,13 +92,18 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   else printf("base case was sorted!\n");
 #endif
 
-// Perform successive merge rounds
+/*
+  Perform successive merge rounds.
+  We are sorting lists with size listSize, which starts at M=1024,
+  because we just finished sorting the base cases of contiguous
+  1024 elements.
+*/
   for(int listSize=M; listSize <= (N/K); listSize *= K) {
     tasks = (N/listSize)/K;
 
     if(tasks > WARPS) { // If each warp has to perform multiple merges
       for(int i=0; i<tasks/WARPS; i++) {
-        findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
+        findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P); // Why is WARPS*K = numLists? tasks = WARPS because each warp handles a single task
 
 #ifdef DEBUG // Check proper partitioning if debug mode
   testPartitioning<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), pivots, listSize, tasks,WARPS);
@@ -120,6 +124,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     }
 
     else { // Each warp only does one task
+     // __global__ void findPartitions(T* data, T*output, int* pivots, int size, int numLists, int tasks, int P) 
       findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
 #ifdef DEBUG
   testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);

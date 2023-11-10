@@ -46,8 +46,8 @@ int main(int argc, char** argv) {
   }
 
   int N = atoi(argv[1]);
-  // test_multimergesort<DATATYPE>(BLOCKS, N);
-  test_squareSort<DATATYPE>(N);
+  test_multimergesort<DATATYPE>(BLOCKS, N);
+  // test_squareSort<DATATYPE>(N);
 
   return 0;
 }
@@ -113,13 +113,16 @@ printf("%lf %lf %lf\n", total_time, minTime, maxTime);
 // If debug mode is on, check that output is correct
 #ifdef DEBUG
   bool error=false;
+  int erroneousIndex;
   for(int i=2; i<N-1; i++) {
     if(host_cmp<int>(h_data[i], h_data[i-1])) {
       error=true;
+      erroneousIndex = i;
+      break;
     }
   }
   if(error)
-    printf("NOT SORTED!\n");
+    printf("NOT SORTED! Item at index %d is less than its predecessor.\n", erroneousIndex);
   else
     printf("SORTED!\n");
 #if PRINT == 1
