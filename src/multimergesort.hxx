@@ -136,11 +136,14 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
   cudaFree(pivots);
 
-  return list[listBit];
+  return list[listBit]; // This returns the array that was last used as output
 }
 
 
 /* Main Kernel to merge groups of K lists */
+/* data and output are offset to focus on the current set of tasks to be processed by the warps
+P = the number of blocks
+*/
 template<typename T, fptr_t f>
 __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks, int P) {
   int totalWarps = P*(THREADS/W);
@@ -168,13 +171,14 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
     }
 
     if(tid<K) 
-      end[tid] = pivots[(totalWarps*K)+tid];
+      end[tid] = pivots[(totalWarps*K)+tid]; // In the general case, the right-hand side evaluates to size=listSize.
     if(warpIdx % warpsPerTask < warpsPerTask-1 && tid < K)
       end[tid] = pivots[((warpIdx+1)*K)+tid];
 
     int outputOffset=0;
+    __syncwarp();                            // Required to populate the start[] shared array first
     for(int i=0; i<K; i++)
-      outputOffset+=start[i];
+      outputOffset+=start[i]; 
 
 #ifdef PIPELINE
     multimergePipeline<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);

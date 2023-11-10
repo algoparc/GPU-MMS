@@ -163,7 +163,10 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
   int warpIdInTask;
   int totalWarps = P*(THREADS/W);
 
-
+  /*
+    In the general case that we are NOT in the last few levels of merging (when there are few arrays, but each
+    with incredible size), we have warpsPerTask = totalWarps / WARPS = (P * THREADS / W) / (P * THREADS/W) = 1
+  */
   warpsPerTask = totalWarps/tasks; // floor
   if(warpsPerTask <= 1) {
     if(tid < K) {

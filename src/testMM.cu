@@ -26,6 +26,37 @@
 #include"multimergesort.hxx"
 #include"buildData.h"
 
+/*
+// For visualization of data
+#include <graphics.h>
+#include <stdlib.h>
+
+void drawBarGraph(int data[], int n) {
+    int gd = DETECT, gm;
+    initgraph(&gd, &gm, "C:\\Turboc3\\BGI");
+
+    int maxData = 0;
+    for (int i = 0; i < n; i++) {
+        if (data[i] > maxData) {
+            maxData = data[i];
+        }
+    }
+
+    int barWidth = 30;  // Adjust this based on your preference
+    int spacing = 10;   // Adjust this based on your preference
+    int x = 100;        // Adjust this based on your preference
+    int yScale = 2;     // Adjust this based on your preference
+
+    for (int i = 0; i < n; i++) {
+        int barHeight = data[i] * yScale;
+        bar(x, getmaxy() - barHeight, x + barWidth, getmaxy());
+        x += barWidth + spacing;
+    }
+
+    closegraph();
+}
+*/
+
 #define DEBUG 1  // Set this to 1 to check that the output is correctly sorted
 #define PRINT 0  // Set this to 1 to print first M elements of the array for further debugging
 #define ITERS 1 // Number of iterations to compute average runtime
@@ -113,24 +144,45 @@ printf("%lf %lf %lf\n", total_time, minTime, maxTime);
 // If debug mode is on, check that output is correct
 #ifdef DEBUG
   bool error=false;
-  int erroneousIndex;
+  int erroneous_index;
   for(int i=2; i<N-1; i++) {
     if(host_cmp<int>(h_data[i], h_data[i-1])) {
       error=true;
-      erroneousIndex = i;
+      erroneous_index = i;
       break;
     }
   }
   if(error)
-    printf("NOT SORTED! Item at index %d is less than its predecessor.\n", erroneousIndex);
+    printf("NOT SORTED! Item at index %d is less than its predecessor.\n", erroneous_index);
   else
     printf("SORTED!\n");
+
+  int greatest_power_of_K = 1024;
+  bool error_with_subarrays = false;
+  int erroneous_index_subarrays = -1;
+  if (greatest_power_of_K * 4 <= N)
+    greatest_power_of_K <<= 2;
+  for (int i = 0; i < N; i += greatest_power_of_K){
+    for (int j = 1; j < greatest_power_of_K; j++){
+      if (i + j < N){
+        if (host_cmp<int>(h_data[i+j], h_data[i+j-1]))
+          error_with_subarrays = true;
+          erroneous_index_subarrays = i + j;
+      }
+    }
+  }
+  if(error_with_subarrays)
+    printf("NOT SORTED! Item at index %d is less than its predecessor.\n", erroneous_index_subarrays);
+  else
+    printf("SORTED SUBARRAYS!\n");
+  
 #if PRINT == 1
   printf("[%d", h_data[0]);
   for (int i = 1; i < M; i++)
     printf(", %d", h_data[i]);
   printf("]\n");
 #endif
+// drawBarGraph(h_data, N);
 #endif
 
   cudaFree(d_data);
