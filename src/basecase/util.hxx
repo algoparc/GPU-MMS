@@ -19,12 +19,21 @@
 
 
 #include<stdio.h>
+//#include<SDL.h>
 #include<iostream>
 #include<fstream>
 #include<vector>
 #include<cmath>
 #include<random>
 #include<algorithm>
+
+// Constants for window dimensions and bar graph parameters
+const int SCREEN_WIDTH = 800;
+const int SCREEN_HEIGHT = 600;
+const int BAR_WIDTH = 20;
+const int MAX_BAR_HEIGHT = 400;
+const int X_OFFSET = 50;
+const int Y_OFFSET = 50;
 
 // Min function based on the given comparison function
 template<typename T, fptr_t f>
@@ -225,3 +234,24 @@ __forceinline__ __device__ void reverse32Elts(T* regs) {
     regs[31-i] = temp;
   }
 }
+/*
+// Function to draw the bar graph
+void drawBarGraph(SDL_Renderer* renderer, const std::vector<int>& data) {
+    SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF); // Set color to white
+    SDL_RenderClear(renderer); // Clear the screen
+
+    int x = X_OFFSET;
+    for (size_t i = 0; i < data.size(); ++i) {
+        int barHeight = (data[i] * MAX_BAR_HEIGHT) / std::numeric_limits<int>::max();
+        int y = SCREEN_HEIGHT - barHeight - Y_OFFSET;
+
+        SDL_Rect barRect = { x, y, BAR_WIDTH, barHeight };
+        SDL_SetRenderDrawColor(renderer, 0xFF, 0x00, 0x00, 0xFF); // Set color to red
+        SDL_RenderFillRect(renderer, &barRect);
+
+        x += BAR_WIDTH + 10; // Increase x position for the next bar
+    }
+
+    SDL_RenderPresent(renderer); // Update the screen
+}
+*/
