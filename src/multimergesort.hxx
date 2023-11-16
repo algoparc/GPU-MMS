@@ -99,7 +99,24 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   1024 elements.
 */
   for(int listSize=M; listSize <= (N/K); listSize *= K) {
-    tasks = (N/listSize)/K;
+    /*
+    tasks: Simply the number of K sets of sub-arrays we need
+    to merge for the general case. 
+
+    additional_task: boolean indicating whether or not we have
+    an additional task to handle, for the edge case where there
+    are either 1) incomplete sub-arrays 2) less than K sub-arrays
+
+    Round up for both the N / listSize and (N / listSize) / K,
+    since N / listSize represents number of subarrays. We want
+    to round up to get the number of subarrays. However, for 
+    number of tasks, we do + K - 2, because we only want to round 
+    up if we are at least 2 greater than the greatest multiple of 
+    K. This is because if we are only 1 over, then we are merging
+    1 sub-array with nothing, so we just leave it alone.
+    */
+    tasks = N/listSize/K;
+    additional_task = (((N+listSize-1)/listSize)+K-2)/K - tasks;
 
     if(tasks > WARPS) { // If each warp has to perform multiple merges
       for(int i=0; i<tasks/WARPS; i++) {

@@ -63,7 +63,6 @@ int main(int argc, char **argv)
 template <typename T>
 void test_multimergesort(int p, int N)
 {
-
   cudaEvent_t start, stop;
   float time_elapsed = 0.0;
   float minTime = 99999;
