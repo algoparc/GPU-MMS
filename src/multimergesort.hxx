@@ -30,6 +30,8 @@
 // Function that does a single level of multiway mergesort
 template<typename T, fptr_t f>
 __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks, int P);
+template<typename T, fptr_t f>
+__global__ void toplevelmerge(T* data, T* output, int numLists, long listSize, long edgeListSize);
 
 // Depricated function, was an attempt to implement another optimization that didn't turn out to be worthwhile.
 //template<typename T>
@@ -98,7 +100,8 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   because we just finished sorting the base cases of contiguous
   1024 elements.
 */
-  for(int listSize=M; listSize <= (N/K); listSize *= K) {
+  int listSize;
+  for(listSize=M; listSize <= (N/K); listSize *= K) {
     /*
     tasks: Simply the number of K sets of sub-arrays we need
     to merge for the general case. 
@@ -160,6 +163,18 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     }
     listBit = !listBit; // Switch input/output arrays
   }
+  // Final, top-level merge. listSize <= N, so test if != N first
+  // If != N, determine how many lists we are merging
+  if (listSize != N){
+    int numLists = (N+listSize-1)/listSize; 
+    int edgeListSize = N-(numLists-1)*listSize;
+    /*
+    Now we have X lists. X-1 of them are filled with listSize elements,
+    and 1 is filled with edgeListSize elements.
+    */
+    toplevelmerge<T,f><<<P, THREADS>>>(list[listBit], list[!listBit], numLists, listSize, edgeListSize);
+    listBit = !listBit;
+  }
 
   cudaFree(pivots);
 
@@ -171,6 +186,8 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 /* data and output are offset to focus on the current set of tasks to be processed by the warps
 P = the number of blocks
 */
+
+
 template<typename T, fptr_t f>
 __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks, int P) {
   int totalWarps = P*(THREADS/W);
@@ -215,6 +232,10 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
   } 
 }
 
+template<typename T, fptr_t f>
+__global__ void toplevelmerge(T* data, T* output, int numLists, long listSize, long edgeListSize){
+
+}
 
 /************************************************************
 * Depricated code.  Attempt at another optimization, but did

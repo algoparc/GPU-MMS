@@ -69,6 +69,10 @@ void test_multimergesort(int p, int N)
   float maxTime = 0.0;
 
   // Create sample sorted lists
+  /*
+  int padding = N%M;
+  N = N+M-padding;
+  */
   T *h_data = (T *)malloc(N * sizeof(T));
 
   T *d_data;
