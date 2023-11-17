@@ -53,8 +53,8 @@ int main(int argc, char **argv)
   }
 
   int N = atoi(argv[1]);
-  // test_multimergesort<DATATYPE>(BLOCKS, N);
-  test_squareSort<DATATYPE>(N);
+  test_multimergesort<DATATYPE>(BLOCKS, N);
+  // test_squareSort<DATATYPE>(N);
 
   return 0;
 }
@@ -147,10 +147,11 @@ void test_multimergesort(int p, int N)
   for (int i=0; i < N; i += greatest_power_of_K){
     for (int j=1; j < greatest_power_of_K; j++){
       if (i + j < N){
-        if (host_cmp<int>(h_data[i+j], h_data[i+j-1]))
+        if (host_cmp<int>(h_data[i+j], h_data[i+j-1])){
           error_with_subarrays = true;
-        erroneous_index_subarrays = i+j;
-        break;
+          erroneous_index_subarrays = i+j;
+          break;
+        }
       }
     }
   }

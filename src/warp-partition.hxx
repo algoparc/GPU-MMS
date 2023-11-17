@@ -150,6 +150,7 @@ __syncthreads();
 
 // Find pivots K pivots for each warp within a 'task' (a group of K lists)
 // Pivots define the start of the partition that each warp will work on merging
+// P = Number of blocks in grid
 template<typename T>
 __global__ void findPartitions(T* data, T*output, int* pivots, int size, int numLists, int tasks, int P) {
   __shared__ int myPivotsRaw[K*(THREADS/W)];
@@ -164,8 +165,8 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
   int totalWarps = P*(THREADS/W);
 
   /*
-    In the general case that we are NOT in the last few levels of merging (when there are few arrays, but each
-    with incredible size), we have warpsPerTask = totalWarps / WARPS = (P * THREADS / W) / (P * THREADS/W) = 1
+    In the general case, warpsPerTask = totalWarps / WARPS = (P * THREADS / W) / (P * THREADS/W) = 1
+    Edge case: warpsPerTask = totalWarps / ... = (P * THREADS / W) / ... >= 1
   */
   warpsPerTask = totalWarps/tasks; // floor
   if(warpsPerTask <= 1) {
@@ -215,6 +216,8 @@ void __global__ testPartitioning(T* data, int* pivots, int size, int tasks, int 
       }
     }
   }
+  for(int i=0; i<K*warpsPerTask;i++)
+    printf("%d ", pivots[i]);
   }
     if(error)
       printf("Partitioning failed\n");

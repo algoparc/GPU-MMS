@@ -116,7 +116,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     1 sub-array with nothing, so we just leave it alone.
     */
     tasks = N/listSize/K;
-    additional_task = (((N+listSize-1)/listSize)+K-2)/K - tasks;
+    int additional_task = (((N+listSize-1)/listSize)+K-2)/K - tasks;
 
     if(tasks > WARPS) { // If each warp has to perform multiple merges
       for(int i=0; i<tasks/WARPS; i++) {
@@ -132,11 +132,21 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       }
 
 // Perform remaining tasks
+// (tasks%WARPS) represents number of remaining tasks
+// (THREADS/W) is the number of warps per block
+// The division of the two quantities is equal to the #tasks / warpsPerBlock
+// each warp processes a single task, so this just yields expected number of blocks 
+      int edge_case_tasks = tasks%WARPS+additional_task; 
       if(tasks%WARPS > 0) {
-        findPartitions<T><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
+        findPartitions<T><<<edge_case_tasks/(THREADS/W),THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, edge_case_tasks*K, edge_case_tasks, edge_case_tasks/(THREADS/W));
+        //findPartitions<T><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
         cudaDeviceSynchronize();
+        // TODO: Handle additional_task separately (edge case)
 
-        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, tasks%WARPS, P);
+        //
+
+        multimergeLevel<T,f><<<edge_case_tasks/(THREADS/W),THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, edge_case_tasks, edge_case_tasks/(THREADS/W));
+        // multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, WARPS, P);
       }
     }
 
@@ -188,7 +198,7 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
     }
 
     if(tid<K) 
-      end[tid] = pivots[(totalWarps*K)+tid]; // In the general case, the right-hand side evaluates to size=listSize.
+      end[tid] = pivots[(totalWarps*K)+tid]; // If tid<K, the right-hand side evaluates to size=listSize.
     if(warpIdx % warpsPerTask < warpsPerTask-1 && tid < K)
       end[tid] = pivots[((warpIdx+1)*K)+tid];
 
@@ -200,7 +210,7 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
 #ifdef PIPELINE
     multimergePipeline<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
 #else
-    multimerge<T>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
+    multimerge<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
 #endif
   } 
 }
