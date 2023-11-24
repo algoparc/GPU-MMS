@@ -23,12 +23,12 @@
 #define M 1024 // Size of base case (keep at 1024)
 #define THREADS 32 // Threads per block
 #define W 32
+#define LOGW 5
 #define B 32
 #define LOGB 5
 #define RANGE 1048576 // Range of randomly generated values
 #define ELTS 32
 
-#define MAX INT_MAX
 #define FULL_MASK 0xFFFFFFFF // Full mask used for sync mask parameter
 
 #if defined(__CUDACC_VER_MAJOR__) // && defined(__CUDACC_VER_MINOR__)

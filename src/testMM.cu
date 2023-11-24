@@ -27,7 +27,7 @@
 
 #include <stdlib.h>
 
-#define DEBUG 1 // Set this to 1 to check that the output is correctly sorted
+#define DEBUG 1 // Set shis to 1 to check that the output is correctly sorted
 #define PRINT 0 // Set this to 1 to print first M elements of the array for further debugging
 #define ITERS 1 // Number of iterations to compute average runtime
 #define BLOCKS 128
@@ -63,22 +63,21 @@ int main(int argc, char **argv)
 template <typename T>
 void test_multimergesort(int p, int N)
 {
+  cudaError_t err;
   cudaEvent_t start, stop;
   float time_elapsed = 0.0;
   float minTime = 99999;
   float maxTime = 0.0;
 
   // Create sample sorted lists
-  /*
-  int padding = N%M;
-  N = N+M-padding;
-  */
-  T *h_data = (T *)malloc(N * sizeof(T));
+  
+  int padding = (N%M) ? M-N%M : 0;
+  T *h_data = (T *)malloc((N+padding) * sizeof(T));
 
   T *d_data;
   T *d_output;
-  cudaMalloc(&d_data, N * sizeof(T));
-  cudaMalloc(&d_output, N * sizeof(T));
+  cudaMalloc(&d_data, (N+padding) * sizeof(T));
+  cudaMalloc(&d_output, (N+padding) * sizeof(T));
   float total_time = 0.0;
 
   srand(0); // time(NULL)
@@ -87,7 +86,14 @@ void test_multimergesort(int p, int N)
   {
 
     // Create random list to be sorted
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+      printf("%s\n", cudaGetErrorString(err));
     create_random_list<T>(h_data, N, 0);
+    printf("%d, %d, %d\n", padding, N-padding, N);
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+      printf("%s\n", cudaGetErrorString(err));
 
     // Copy list to GPU
     cudaMemcpy(d_data, h_data, N * sizeof(T), cudaMemcpyHostToDevice);
@@ -103,8 +109,12 @@ void test_multimergesort(int p, int N)
     cudaEventRecord(start, 0);
 
     // Run GPU-MMS.  T is datatype and cmp is comparison function (defined in cmp.hxx)
-    d_output = multimergesort<T, cmp>(d_data, d_output, h_data, p, N);
+    pad<T><<<1,padding>>>(d_data+N, MAXVAL);
+    d_output = multimergesort<T, cmp>(d_data, d_output, h_data, p, N+padding);
     cudaDeviceSynchronize();
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+      printf("CUDA Error: %s\n", cudaGetErrorString(err));
 
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);

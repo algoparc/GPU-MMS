@@ -26,6 +26,7 @@
 #include "params.h"
 #include "io-merge-gen.hxx"
 #include "warp-partition.hxx"
+#include "pad.hxx"
 
 // Function that does a single level of multiway mergesort
 template<typename T, fptr_t f>
@@ -73,9 +74,9 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   squareSort<T,f><<<baseBlocks,THREADS>>>(input, N);
 
 // Check that basecase properly sorted if in DEBUG mode
-  bool correct=true;
   cudaMemcpy(h_data, input, N*sizeof(T), cudaMemcpyDeviceToHost);
 #ifdef DEBUG
+  bool correct=true;
   #if PRINT == 1
     printf("[%d", h_data[0]);
     for (int i = 1; i < M; i++)
@@ -119,7 +120,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     1 sub-array with nothing, so we just leave it alone.
     */
     tasks = N/listSize/K;
-    int additional_task = (((N+listSize-1)/listSize)+K-2)/K - tasks;
+    int additionalTask = (((N+listSize-1)/listSize)+K-2)/K - tasks;
 
     if(tasks > WARPS) { // If each warp has to perform multiple merges
       for(int i=0; i<tasks/WARPS; i++) {
@@ -134,27 +135,26 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
       }
 
-// Perform remaining tasks
-// (tasks%WARPS) represents number of remaining tasks
-// (THREADS/W) is the number of warps per block
-// The division of the two quantities is equal to the #tasks / warpsPerBlock
-// each warp processes a single task, so this just yields expected number of blocks 
-      int edge_case_tasks = tasks%WARPS+additional_task; 
-      if(tasks%WARPS > 0) {
-        findPartitions<T><<<edge_case_tasks/(THREADS/W),THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, edge_case_tasks*K, edge_case_tasks, edge_case_tasks/(THREADS/W));
-        //findPartitions<T><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
+      int edgeCaseTasks = tasks%WARPS; 
+      int countEdgeLists;
+      // countEdgeLists is the number of lists to merge at the very end (in the case that it may be < K)
+      if (additionalTask)
+        countEdgeLists = ((N-tasks*K*listSize-edgeCaseTasks*K*listSize)+listSize-1)/listSize;
+      int listsToMerge = countEdgeLists + edgeCaseTasks*K; 
+      edgeCaseTasks += additionalTask;
+      if(edgeCaseTasks > 0) {
+        findPartitions<T><<<edgeCaseTasks/(THREADS/W),THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, listsToMerge, edgeCaseTasks, edgeCaseTasks/(THREADS/W));
         cudaDeviceSynchronize();
         // TODO: Handle additional_task separately (edge case)
 
         //
 
-        multimergeLevel<T,f><<<edge_case_tasks/(THREADS/W),THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, edge_case_tasks, edge_case_tasks/(THREADS/W));
-        // multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, WARPS, P);
+        multimergeLevel<T,f><<<edgeCaseTasks/(THREADS/W),THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, edgeCaseTasks, edgeCaseTasks/(THREADS/W));
       }
     }
 
-    else { // Each warp only does one task
-     // __global__ void findPartitions(T* data, T*output, int* pivots, int size, int numLists, int tasks, int P) 
+    else { 
+      // Each warp only does one task
       findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
 #ifdef DEBUG
   testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
@@ -172,6 +172,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     Now we have X lists. X-1 of them are filled with listSize elements,
     and 1 is filled with edgeListSize elements.
     */
+
     toplevelmerge<T,f><<<P, THREADS>>>(list[listBit], list[!listBit], numLists, listSize, edgeListSize);
     listBit = !listBit;
   }
@@ -216,7 +217,7 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
 
     if(tid<K) 
       end[tid] = pivots[(totalWarps*K)+tid]; // If tid<K, the right-hand side evaluates to size=listSize.
-    if(warpIdx % warpsPerTask < warpsPerTask-1 && tid < K)
+    if(warpIdx % warpsPerTask < warpsPerTask-1 && tid < K) // Only executes in last kernel launch
       end[tid] = pivots[((warpIdx+1)*K)+tid];
 
     int outputOffset=0;
