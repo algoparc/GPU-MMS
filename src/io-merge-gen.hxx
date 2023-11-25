@@ -264,6 +264,7 @@ __device__ void buildHeap(T* input, T* heap, int* start, int* end, int size, int
     else
       heap[((K-1+i)<<LOGB)+tid] = MAXVAL;
   }
+  // May need a warp synchronization after adding B to start[tid]
   if(tid < K)
     start[tid] += B;
 
@@ -314,6 +315,72 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
 
 }
 
+template<typename T, fptr_t f>
+__device__ void multimergePipelineEdgeCaseFull(T* input, T* output, int* start, int* end, int size, int outputOffset) {
+  /*
+  We use a state machine to indicate which phase we are in for the partially filled sub-array
+  0 = Have not found the set of elements<W that make up the incomplete sub-array
+  1 = Found the set of elements<W that make up the incomplete sub-array
+  2 = Finished processing the incomplete sub-array
+  */
+  int state = 0;
+  int warpInBlock = threadIdx.x>>5;
+  int tid = threadIdx.x&(W-1);
+  __shared__ T heapData[B*(2*K-1)*(THREADS>>5)]; // Each warp in the block needs its own shared memory
+  T* heap = heapData+((B*(2*K-1))*warpInBlock);
+
+  int path[PL+1];
+
+  buildHeap<T,f>(input, heap, start, end, size,tid);
+
+  int outputIdx=tid+outputOffset;
+  int nodeIdx;
+
+  while(heap[B-1] != MAXVAL) {
+    output[outputIdx] = heap[tid];
+    outputIdx += B;
+    nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path, tid);
+    fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
+  }
+  // Write the last remaining node to global memory
+  output[outputIdx] = heap[tid];
+}
+
+template<typename T, fptr_t f>
+__device__ void multimergePipelineEdgeCasePartial(T* input, T* output, int* start, int* end, int size, int outputOffset) {
+  /*
+  We use a state machine to indicate which phase we are in for the partially filled sub-array
+  0 = Have not found the set of elements<W that make up the incomplete sub-array
+  1 = Found the set of elements<W that make up the incomplete sub-array
+  2 = Finished processing the incomplete sub-array
+  */
+  int state = 0;
+  int warpInBlock = threadIdx.x>>5;
+  int tid = threadIdx.x&(W-1);
+  __shared__ T heapData[B*(2*K-1)*(THREADS>>5)]; // Each warp in the block needs its own shared memory
+  T* heap = heapData+((B*(2*K-1))*warpInBlock);
+
+  int path[PL+1];
+
+  buildHeap<T,f>(input, heap, start, end, size,tid);
+
+  int outputIdx=tid+outputOffset;
+  int nodeIdx;
+
+  while(heap[B-1] != MAXVAL) {
+    output[outputIdx] = heap[tid];
+    outputIdx += B;
+    nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path, tid);
+    fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
+  }
+
+  // If there is still something in the highest node of the heap, write it out to global memory
+  // TODO: Fix this
+  if (state == 0)
+    output[outputIdx] = heap[tid];
+
+
+}
 // Merge K lists into one using 1 warp
 template<typename T, fptr_t f>
 __device__ void multimerge(T* input, T* output, int* start, int* end, int size, int outputOffset) {

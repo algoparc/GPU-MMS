@@ -109,7 +109,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
     additional_task: boolean indicating whether or not we have
     an additional task to handle, for the edge case where there
-    are either 1) incomplete sub-arrays 2) less than K sub-arrays
+    are either 1. incomplete sub-arrays 2. less than K sub-arrays
 
     Round up for both the N / listSize and (N / listSize) / K,
     since N / listSize represents number of subarrays. We want
@@ -137,19 +137,20 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
       int edgeCaseTasks = tasks%WARPS; 
       int countEdgeLists;
+      int blocks;
       // countEdgeLists is the number of lists to merge at the very end (in the case that it may be < K)
       if (additionalTask)
         countEdgeLists = ((N-tasks*K*listSize-edgeCaseTasks*K*listSize)+listSize-1)/listSize;
       int listsToMerge = countEdgeLists + edgeCaseTasks*K; 
       edgeCaseTasks += additionalTask;
+      blocks = (edgeCaseTasks+THREADS/W-1)/(THREADS/W);
       if(edgeCaseTasks > 0) {
-        findPartitions<T><<<edgeCaseTasks/(THREADS/W),THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, listsToMerge, edgeCaseTasks, edgeCaseTasks/(THREADS/W));
-        cudaDeviceSynchronize();
+        findPartitions<T><<<blocks,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, listsToMerge, edgeCaseTasks, blocks);
         // TODO: Handle additional_task separately (edge case)
 
         //
 
-        multimergeLevel<T,f><<<edgeCaseTasks/(THREADS/W),THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, edgeCaseTasks, edgeCaseTasks/(THREADS/W));
+        multimergeLevel<T,f><<<blocks,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, edgeCaseTasks, blocks);
       }
     }
 
@@ -231,6 +232,25 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
     multimerge<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
 #endif
   } 
+}
+
+template<typename T, fptr_t f>
+__global__ void multimergeLevelEdgeCase(T* data, T* output, int* pivots, long size, int tasks, int P) {
+  int totalWarps = P*(THREADS/W);
+  int warpInBlock = threadIdx.x/W;
+  int warpIdx = (blockIdx.x)*(THREADS/W)+warpInBlock;
+  int tid = threadIdx.x%W;
+
+
+  __shared__ int startRaw[K*(THREADS/W)];
+  int* start = startRaw+(warpInBlock*K);
+  __shared__ int endRaw[K*(THREADS/W)];
+  int* end = endRaw+(warpInBlock*K);
+
+  int warpsPerTask = totalWarps/tasks;
+  if(warpsPerTask == 0) warpsPerTask=1;
+  int myTask = warpIdx/warpsPerTask;
+  long taskOffset = size*K*myTask;
 }
 
 template<typename T, fptr_t f>

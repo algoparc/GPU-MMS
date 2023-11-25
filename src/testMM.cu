@@ -86,14 +86,7 @@ void test_multimergesort(int p, int N)
   {
 
     // Create random list to be sorted
-    err = cudaGetLastError();
-    if (err != cudaSuccess)
-      printf("%s\n", cudaGetErrorString(err));
     create_random_list<T>(h_data, N, 0);
-    printf("%d, %d, %d\n", padding, N-padding, N);
-    err = cudaGetLastError();
-    if (err != cudaSuccess)
-      printf("%s\n", cudaGetErrorString(err));
 
     // Copy list to GPU
     cudaMemcpy(d_data, h_data, N * sizeof(T), cudaMemcpyHostToDevice);
