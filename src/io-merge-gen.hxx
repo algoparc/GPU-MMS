@@ -267,6 +267,7 @@ __device__ void buildHeap(T* input, T* heap, int* start, int* end, int size, int
   // May need a warp synchronization after adding B to start[tid]
   if(tid < K)
     start[tid] += B;
+  __syncwarp();
 
 // Go through each level of the tree, merging children to make new nodes
 // each merge propagates down to leaf where a new block is taken from input
@@ -317,13 +318,6 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
 
 template<typename T, fptr_t f>
 __device__ void multimergePipelineEdgeCaseFull(T* input, T* output, int* start, int* end, int size, int outputOffset) {
-  /*
-  We use a state machine to indicate which phase we are in for the partially filled sub-array
-  0 = Have not found the set of elements<W that make up the incomplete sub-array
-  1 = Found the set of elements<W that make up the incomplete sub-array
-  2 = Finished processing the incomplete sub-array
-  */
-  int state = 0;
   int warpInBlock = threadIdx.x>>5;
   int tid = threadIdx.x&(W-1);
   __shared__ T heapData[B*(2*K-1)*(THREADS>>5)]; // Each warp in the block needs its own shared memory
@@ -343,26 +337,44 @@ __device__ void multimergePipelineEdgeCaseFull(T* input, T* output, int* start, 
     fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
   }
   // Write the last remaining node to global memory
-  output[outputIdx] = heap[tid];
+  if(heap[tid] != MAXVAL) {
+    output[outputIdx] = heap[tid];
+  }
 }
 
 template<typename T, fptr_t f>
-__device__ void multimergePipelineEdgeCasePartial(T* input, T* output, int* start, int* end, int size, int outputOffset) {
+__device__ void multimergePipelineEdgeCasePartial(T* input, T* output, int* start, int* end, int size, int smallerSize, int outputOffset, int L) {
   /*
-  We use a state machine to indicate which phase we are in for the partially filled sub-array
+  We use the state flag to indicate which phase we are in for the partially filled sub-array
   0 = Have not found the set of elements<W that make up the incomplete sub-array
   1 = Found the set of elements<W that make up the incomplete sub-array
   2 = Finished processing the incomplete sub-array
+
+  The table indicates from which index to access the heap/global memory.
+  The fromGlobalMemory table is a table of booleans that indicate whether
+  to reload the buffer from global memory or from a node in the heap. 
+  -1 = Don't fill from anywhere (because out of bounds)
+  0 = Fill from other nodes in heap
+  1 = Fill from global memory
   */
+  __shared__ int table[(2*K-1)];
+  __shared__ int fromGlobalMemory[(2*K-1)];
   int state = 0;
   int warpInBlock = threadIdx.x>>5;
   int tid = threadIdx.x&(W-1);
-  __shared__ T heapData[B*(2*K-1)*(THREADS>>5)]; // Each warp in the block needs its own shared memory
-  T* heap = heapData+((B*(2*K-1))*warpInBlock);
+  __shared__ T heap[B*(2*K-1)];
 
   int path[PL+1];
 
   buildHeap<T,f>(input, heap, start, end, size,tid);
+  if (threadIdx.x == 0){
+    for (int i=0; i<K; i++)
+      printf("Start: %d ", start[i]);
+    printf("\n");
+    for (int i=0; i<K; i++)
+      printf("End: %d ", end[i]);
+    printf("\n");
+  }
 
   int outputIdx=tid+outputOffset;
   int nodeIdx;
@@ -376,9 +388,9 @@ __device__ void multimergePipelineEdgeCasePartial(T* input, T* output, int* star
 
   // If there is still something in the highest node of the heap, write it out to global memory
   // TODO: Fix this
-  if (state == 0)
+  if(heap[tid] != MAXVAL) {
     output[outputIdx] = heap[tid];
-
+  }
 
 }
 // Merge K lists into one using 1 warp

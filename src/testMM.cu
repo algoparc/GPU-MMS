@@ -43,6 +43,7 @@ template <typename T, fptr_t f>
 void test_arrayEquality(T *arr1, T *arr2, int N);
 template <typename T, fptr_t f>
 void selection_sort(T* a, int N);
+void printArr(int* arr, int N);
 
 int main(int argc, char **argv)
 {
@@ -82,8 +83,7 @@ void test_multimergesort(int p, int N)
 
   srand(0); // time(NULL)
 
-  for (int it = 0; it < ITERS; it++)
-  {
+  for (int it = 0; it < ITERS; it++) {
 
     // Create random list to be sorted
     create_random_list<T>(h_data, N, 0);
@@ -105,9 +105,6 @@ void test_multimergesort(int p, int N)
     pad<T><<<1,padding>>>(d_data+N, MAXVAL);
     d_output = multimergesort<T, cmp>(d_data, d_output, h_data, p, N+padding);
     cudaDeviceSynchronize();
-    err = cudaGetLastError();
-    if (err != cudaSuccess)
-      printf("CUDA Error: %s\n", cudaGetErrorString(err));
 
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
@@ -127,15 +124,14 @@ void test_multimergesort(int p, int N)
 
   // copy sorted result back to CPU
   cudaMemcpy(h_data, d_output, N * sizeof(T), cudaMemcpyDeviceToHost);
+  // printArr(h_data + 1048576, N-1048576);
 
 // If debug mode is on, check that output is correct
 #ifdef DEBUG
   bool error = false;
   int erroneous_index;
-  for (int i = 2; i < N - 1; i++)
-  {
-    if (host_cmp<int>(h_data[i], h_data[i - 1]))
-    {
+  for (int i = 1; i < N - 1; i++){
+    if (host_cmp<int>(h_data[i], h_data[i - 1])){
       error = true;
       erroneous_index = i;
       break;
@@ -149,8 +145,9 @@ void test_multimergesort(int p, int N)
   int greatest_power_of_K = 1024;
   bool error_with_subarrays = false;
   int erroneous_index_subarrays = -1;
-  if (greatest_power_of_K * K <= N)
-    greatest_power_of_K <<= 2; // where 2 is log(K)
+  while (greatest_power_of_K * K <= N) {
+    greatest_power_of_K *= K; // where 2 is log(K)
+  }
   for (int i=0; i < N; i += greatest_power_of_K){
     for (int j=1; j < greatest_power_of_K; j++){
       if (i + j < N){
@@ -162,6 +159,7 @@ void test_multimergesort(int p, int N)
       }
     }
   }
+  printf("Subarray sizes: %d\n", greatest_power_of_K);
   if (error_with_subarrays)
     printf("NOT SORTED! Item at index %d is less than its predecessor.\n", erroneous_index_subarrays);
   else
@@ -320,4 +318,12 @@ void selection_sort(T* a, int N){
       }
     }
   }
+}
+
+void printArr(int* arr, int N){
+  printf("[%d", *arr);
+  for (int i = 1; i < N; i++){
+    printf(", %d", *(arr+i));
+  }
+  printf("]\n");
 }
