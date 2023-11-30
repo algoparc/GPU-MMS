@@ -367,14 +367,6 @@ __device__ void multimergePipelineEdgeCasePartial(T* input, T* output, int* star
   int path[PL+1];
 
   buildHeap<T,f>(input, heap, start, end, size,tid);
-  if (threadIdx.x == 0){
-    for (int i=0; i<K; i++)
-      printf("Start: %d ", start[i]);
-    printf("\n");
-    for (int i=0; i<K; i++)
-      printf("End: %d ", end[i]);
-    printf("\n");
-  }
 
   int outputIdx=tid+outputOffset;
   int nodeIdx;

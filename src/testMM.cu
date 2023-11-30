@@ -74,6 +74,9 @@ void test_multimergesort(int p, int N)
   
   int padding = (N%M) ? M-N%M : 0;
   T *h_data = (T *)malloc((N+padding) * sizeof(T));
+  for (int i = 0; i < padding; i++){
+    *(h_data + i) = MAXVAL - 1;
+  }
 
   T *d_data;
   T *d_output;
@@ -92,7 +95,7 @@ void test_multimergesort(int p, int N)
     cudaMemcpy(d_data, h_data, N * sizeof(T), cudaMemcpyHostToDevice);
 
     // Zero out result array
-    cudaMalloc(&d_output, N * sizeof(T));
+    cudaMalloc(&d_output, (N+padding) * sizeof(T));
     //  cudaMemset(&d_output, 0, N*sizeof(T));
 
     cudaDeviceSynchronize();
@@ -102,7 +105,7 @@ void test_multimergesort(int p, int N)
     cudaEventRecord(start, 0);
 
     // Run GPU-MMS.  T is datatype and cmp is comparison function (defined in cmp.hxx)
-    pad<T><<<1,padding>>>(d_data+N, MAXVAL);
+    pad<T><<<1,padding>>>(d_data+N, MAXVAL - 1);
     d_output = multimergesort<T, cmp>(d_data, d_output, h_data, p, N+padding);
     cudaDeviceSynchronize();
 
@@ -124,13 +127,12 @@ void test_multimergesort(int p, int N)
 
   // copy sorted result back to CPU
   cudaMemcpy(h_data, d_output, N * sizeof(T), cudaMemcpyDeviceToHost);
-  // printArr(h_data + 1048576, N-1048576);
 
 // If debug mode is on, check that output is correct
 #ifdef DEBUG
   bool error = false;
   int erroneous_index;
-  for (int i = 1; i < N - 1; i++){
+  for (int i = 1; i < N; i++){
     if (host_cmp<int>(h_data[i], h_data[i - 1])){
       error = true;
       erroneous_index = i;
@@ -159,11 +161,6 @@ void test_multimergesort(int p, int N)
       }
     }
   }
-  printf("Subarray sizes: %d\n", greatest_power_of_K);
-  if (error_with_subarrays)
-    printf("NOT SORTED! Item at index %d is less than its predecessor.\n", erroneous_index_subarrays);
-  else
-    printf("SORTED SUBARRAYS!\n");
 
 #if PRINT == 1
   printf("[%d", h_data[0]);
