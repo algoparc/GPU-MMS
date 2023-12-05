@@ -127,7 +127,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     printf("No errors after initialization in multimergesort function call\n");
   }
   #endif
-  return input;
   int counter = 0;
   for(listSize=M; listSize < N; listSize *= K) {
     /*
@@ -149,6 +148,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     tasks = N/listSize/K;
     int additionalTask = (((N+listSize-1)/listSize)+K-2)/K - tasks;
     counter++;
+    printf("%d\n", tasks);
     if(tasks > WARPS) { // If each warp has to perform multiple merges
       for(int i=0; i<tasks/WARPS; i++) {
         findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P); // Why is WARPS*K = numLists? tasks = WARPS because each warp handles a single task
@@ -161,6 +161,8 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
           err = cudaGetLastError();
           if (err != cudaSuccess){
             printf("Error at findPartitions function call #%d.\nCUDA Error: %s\n", counter, cudaGetErrorString(err));
+          } else {
+            printf("Successful launch of findPartitions at level #%d\n", counter);
           }
         #endif
 
@@ -170,6 +172,8 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
           err = cudaGetLastError();
           if (err != cudaSuccess){
             printf("Error at multimergeLevel function call #%d.\nCUDA Error: %s\n", counter, cudaGetErrorString(err));
+          } else {
+            printf("Success at multimergeLevel function call at level #%d.\n", counter);
           }
         #endif
       }
@@ -191,6 +195,8 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
           err = cudaGetLastError();
           if (err != cudaSuccess){
             printf("Error at multiMergeLevelEdgeCase at level #%d.\nCUDA Error: %s\n", counter, cudaGetErrorString(err));
+          } else {
+            printf("Success at multiMergeLevelEdgeCase at level #%d.\n", counter);
           }
         #endif
         cudaDeviceSynchronize();
@@ -202,6 +208,8 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
           err = cudaGetLastError();
           if (err != cudaSuccess){
             printf("Error at copy at level #%d.\nCUDA Error: %s\n", counter, cudaGetErrorString(err));
+          } else {
+            printf("Success at copy at level #%d.", counter);
           }
         #endif
       }
@@ -210,12 +218,16 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
     else {
       // Each warp only does one task
-      // findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
-#ifdef DEBUG
-  testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
-#endif
-      // multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
+      int edgeCaseTaskSize = N%(K*listSize);
+      if( edgeCaseTaskSize ) {
+        fp<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
+        ml<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
+      } else {
+        findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
+        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
+      }
       
+      /*
       int edgeCaseTasks = tasks%WARPS; 
       int countEdgeLists;
       int blocks;
@@ -228,15 +240,26 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       blocks = (edgeCaseTasks+THREADS/W-1)/(THREADS/W);
       multimergeLevelEdgeCase<T,f><<<blocks,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, edgeCaseTasks, blocks, N); 
       cudaDeviceSynchronize();
+      #ifdef ERROR_LOGS
+          err = cudaGetLastError();
+          if (err != cudaSuccess){
+            printf("Error at multiMergeLevelEdgeCase at level #%d.\nCUDA Error: %s\n", counter, cudaGetErrorString(err));
+          } else {
+            printf("Success at multiMergeLevelEdgeCase at level #%d.\n", counter);
+          }
+        #endif
       if (!additionalTask){
         copy<T><<<(N-blocks*K*listSize)/THREADS, THREADS>>>(list[listBit]+blocks*K*listSize, list[!listBit]+blocks*K*listSize);
         #ifdef ERROR_LOGS
           err = cudaGetLastError();
           if (err != cudaSuccess){
             printf("Error at copy at level #%d.\nCUDA Error: %s\n", counter, cudaGetErrorString(err));
+          } else {
+            printf("Success at copy at level #%d.", counter);
           }
         #endif
       }
+      */
     }
     listBit = !listBit; // Switch input/output arrays
   }
@@ -298,6 +321,54 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
 }
 
 template<typename T, fptr_t f>
+__global__ void ml(T* data, T* output, int* pivots, long size, int tasks, int P) {
+  int totalWarps = P*(THREADS/W);
+  int warpInBlock = threadIdx.x/W;
+  int warpIdx = (blockIdx.x)*(THREADS/W)+warpInBlock;
+  int tid = threadIdx.x%W;
+
+
+  __shared__ int startRaw[K*(THREADS/W)];
+  int* start = startRaw+(warpInBlock*K);
+  __shared__ int endRaw[K*(THREADS/W)];
+  int* end = endRaw+(warpInBlock*K);
+
+  int warpsPerTask = totalWarps/tasks;
+  if(warpsPerTask == 0) warpsPerTask=1;
+  int myTask = warpIdx/warpsPerTask;
+  long taskOffset = size*K*myTask;
+
+  if(tid<K) {
+    start[tid] = pivots[(warpIdx*K)+tid];
+  }
+  int outputOffset=0;
+  __syncwarp();                            // Required to populate the start[] shared array first
+  for(int i=0; i<K; i++)
+    outputOffset+=start[i]; 
+
+  if(myTask < tasks-1) {
+
+    if(tid<K) 
+      end[tid] = pivots[(totalWarps*K)+tid]; // If tid<K, the right-hand side evaluates to size=listSize.
+    if(warpIdx % warpsPerTask < warpsPerTask-1 && tid < K) // Only executes in last kernel launch ????????
+      end[tid] = pivots[((warpIdx+1)*K)+tid];
+    __syncwarp();
+
+    
+
+#ifdef PIPELINE
+    multimergePipeline<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
+#else
+    multimerge<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
+#endif
+  } else if (myTask == tasks-1) {
+    // TODO
+    mmp<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
+    //
+  }
+}
+
+template<typename T, fptr_t f>
 __global__ void multimergeLevelEdgeCase(T* data, T* output, int* pivots, long size, int tasks, int P, int N) {
   int x = N%(size*K) <= size;
   int totalWarps = P*(THREADS/W);
@@ -328,7 +399,6 @@ __global__ void multimergeLevelEdgeCase(T* data, T* output, int* pivots, long si
   } else {
     eval = myTask<tasks-1; 
   }
-
 
   __syncthreads();
   if (eval){
@@ -362,6 +432,7 @@ __global__ void multimergeLevelEdgeCase(T* data, T* output, int* pivots, long si
     if (tid == 0)
       printf("%d %d %d %d\n", end[0], end[1], end[2], end[3]);
     */
+    // Error here with the pipeline edge case
     multimergePipelineEdgeCasePartial<T,f>(data+taskOffset, output+taskOffset, start, end, size, smallerSize, 0, L);
   }
 }
