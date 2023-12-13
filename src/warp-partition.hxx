@@ -370,28 +370,6 @@ __global__ void fp(T* data, T*output, int* pivots, int size, int numLists, int t
   }
 }
 
-template<typename T>
-__global__ void findPartitionsEdgeCase(T* data, T*output, int* pivots, int size, int numLists, int tasks, int P) {
-  __shared__ int myPivotsRaw[K*(THREADS/W)];
-  int warpInBlock = threadIdx.x/W;
-  int warpIdx = blockIdx.x*(THREADS/W)+warpInBlock;
-  // If we have additional warps (should be K-1 or less additional warps) then have them do no work
-  if (warpIdx < tasks){
-    // If we are at the very end of the list, we do a merge that may be less than K-way. We do L-way mergesort.
-    if (warpIdx == tasks-1) {
-      int L = numLists%K;
-      if (L == 0)
-        L = K;
-
-    } else {
-      // Launch with listSize as the maximum
-
-    }
-
-  }
-
-
-}
 /* FOR DEBUGGING - MAKES SURE PIVOTS MAKE A VALID PARTITION */
 template<typename T>
 void __global__ testPartitioning(T* data, int* pivots, int size, int tasks, int P) {
