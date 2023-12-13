@@ -27,8 +27,17 @@
 template<typename T>
 void create_sorted_list(T* data, int size, int addVal) {
   for(int i=0; i<size; i++) {
-//    data[i].key = i+addVal;
-//    data[i].val = i-addVal;
+    T[data] = i;
+  }
+}
+
+template<typename T>
+void randomize(T* data, int size) {
+  for(int i=0; i<size; i++) {
+    int j = rand()%(size-i)+i;
+    T temp = data[i];
+    data[i] = data[j];
+    data[j] = temp;
   }
 }
 /*

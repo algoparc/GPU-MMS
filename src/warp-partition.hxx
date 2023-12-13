@@ -175,10 +175,13 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
 
   // Initialize boundary positions
   if(threadIdx.x < K*WARPS) {
+    
     startBoundary[threadIdx.x] = 0;
     endBoundary[threadIdx.x] = size-1;
     tempPivots[tid] = size/2;
   }
+
+  // Edge case 
 
 // first warp of task begins at start of every list
   if(warpIdInTask == 0 && tid < K) {
