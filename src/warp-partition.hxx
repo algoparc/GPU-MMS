@@ -58,7 +58,7 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
     tempPivots[tid] = 0;
   }
 
-__syncthreads();
+__syncwarp();
 
 /*----------------------------------
 
@@ -72,6 +72,7 @@ See Figure 1 in 'figures' directory
     if(tid < K) {
       candidates[warpInBlock*K+tid] = data[size*tid + tempPivots[tid]];
     }
+    __syncwarp();
 
     __shared__ T partVal[THREADS/W];
     __shared__ int partList[THREADS/W];
@@ -130,7 +131,7 @@ See Figure 1 in 'figures' directory
         }
       }
       // Binary search each other list to find predecessor of partitioning value
-    __syncthreads();
+    __syncwarp();
 
     int step;
     if(tid < K) {
@@ -166,20 +167,31 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
   __shared__ T candidates[K*WARPS];
   __shared__ int partitionVal[WARPS];
 
-  if(threadIdx.x < WARPS) {
-    partitionVal[threadIdx.x] = (size*K)/2;
-  }
-
  volatile  __shared__ int startBoundary[K*WARPS];
  volatile  __shared__ int endBoundary[K*WARPS];
 
+  int end = 0;
   // Initialize boundary positions
-  if(threadIdx.x < K*WARPS) {
-    
-    startBoundary[threadIdx.x] = 0;
-    endBoundary[threadIdx.x] = size-1;
-    tempPivots[tid] = size/2;
+  if(tid < K) {
+
+    startBoundary[warpInBlock*K + tid] = 0;
+    int difference = edgeCaseTaskSize - tid*size;
+    if (difference >= 0) {
+      end = (difference < size)*difference + (size <= difference)*size; // Minimum of difference and size, using predicate logic
+    }
+    endBoundary[warpInBlock*K + tid] = end;
+    tempPivots[tid] = end/2;
   }
+  __syncwarp();
+
+  if(tid==0) {
+    int sum = 0;
+    for (int i = 0; i < K; i++) {
+      sum += tempPivots[i];
+    }
+    partitionVal[warpInBlock] = sum;
+  }
+  __syncwarp();
 
   // Edge case 
 
@@ -188,13 +200,7 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
     tempPivots[tid] = 0;
   }
 
-__syncthreads();
-
-/*----------------------------------
-
-See Figure 1 in 'figures' directory
-
------------------------------------*/
+__syncwarp();
 
 // find min and max elts of list
   if(warpIdInTask > 0) {
@@ -205,6 +211,7 @@ See Figure 1 in 'figures' directory
 
     __shared__ T partVal[THREADS/W];
     __shared__ int partList[THREADS/W];
+    __syncwarp(); // unnecessary
 // Sequential section per warp 
     if(tid==0) {
       partVal[warpInBlock]=MAXVAL;
@@ -260,13 +267,17 @@ See Figure 1 in 'figures' directory
         }
       }
       // Binary search each other list to find predecessor of partitioning value
-    __syncthreads();
+    __syncwarp();
+
+    if (tid < K && tempPivots[tid] >= end) {
+      tempPivots[tid] = end-1;
+    }
 
     int step;
     if(tid < K) {
       if(tid != partList[warpInBlock]) {
-        tempPivots[tid] = size/2;
-        step = size/4;
+        tempPivots[tid] = end/2;            // end/2 as opposed to size/2
+        step = end/4;
 
         while(step >= 1) {
           if(!cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock])) 
@@ -282,6 +293,9 @@ See Figure 1 in 'figures' directory
       }
     }
   }
+
+  //if (tid == 0)
+  //  printf("PIVOTS: %d %d %d %d\n", tempPivots[0], tempPivots[1], tempPivots[2], tempPivots[3]);
 }
 
 // Find pivots K pivots for each warp within a 'task' (a group of K lists)
@@ -299,12 +313,13 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
   int taskOffset;
   int warpIdInTask;
   int totalWarps = P*(THREADS/W);
-
-  /*
-    In the general case, warpsPerTask = totalWarps / WARPS = (P * THREADS / W) / (P * THREADS/W) = 1
-    Edge case: warpsPerTask = totalWarps / ... = (P * THREADS / W) / ... >= 1
-  */
+  
   warpsPerTask = totalWarps/tasks; // floor
+  if (blockIdx.x == 0 && threadIdx.x == 0)
+    printf("wpt = %d\n", warpsPerTask);
+      //if (blockIdx.x == 0) {
+      //  printf("tasks: %d\n", tasks);
+      //}
   if(warpsPerTask <= 1) {
     if(tid < K) {
       pivots[warpIdx*K+tid] = 0;
@@ -320,7 +335,6 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
       warpIdInTask = warpIdx - myTask*warpsPerTask;
 
       warp_partition<T>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask);
-
       if(tid < K) {
         pivots[warpIdx*K+tid] = myPivots[tid];
       }
@@ -329,6 +343,7 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
       }
     }
   }
+  
 }
 
 // If there is an edge case
@@ -368,8 +383,10 @@ __global__ void fp(T* data, T*output, int* pivots, int size, int numLists, int t
   if(tid < K) {
     pivots[warpIdx*K+tid] = myPivots[tid];
   }
-  if(blockIdx.x ==0 && threadIdx.x<K) {  // Fill last K spots with max val
-    pivots[totalWarps*K+threadIdx.x] = size;
+  if(blockIdx.x==0 && threadIdx.x<K) {  // Fill last K spots with end values
+    int difference = edgeCaseTaskSize - threadIdx.x * size;
+    int end = (difference < size)*difference + (size <= difference)*size; // taking MIN of difference and size using predicates
+    pivots[totalWarps*K+threadIdx.x] = end;
   }
 }
 

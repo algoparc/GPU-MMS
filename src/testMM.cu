@@ -64,7 +64,6 @@ int main(int argc, char **argv)
 template <typename T>
 void test_multimergesort(int p, int N)
 {
-  cudaError_t err;
   cudaEvent_t start, stop;
   float time_elapsed = 0.0;
   float minTime = 99999;
@@ -142,28 +141,12 @@ void test_multimergesort(int p, int N)
       break;
     }
   }
+  
   if (error)
     printf("NOT SORTED! Item at index %d is less than its predecessor.\n", erroneous_index);
   else
     printf("SORTED!\n");
-
-  int greatest_power_of_K = 1024;
-  bool error_with_subarrays = false;
-  int erroneous_index_subarrays = -1;
-  while (greatest_power_of_K * K <= N) {
-    greatest_power_of_K *= K; // where 2 is log(K)
-  }
-  for (int i=0; i < N; i += greatest_power_of_K){
-    for (int j=1; j < greatest_power_of_K; j++){
-      if (i + j < N){
-        if (host_cmp<int>(h_data[i+j], h_data[i+j-1])){
-          error_with_subarrays = true;
-          erroneous_index_subarrays = i+j;
-          break;
-        }
-      }
-    }
-  }
+  
 
 #if PRINT == 1
   printf("[%d", h_data[0]);
@@ -246,46 +229,7 @@ void test_squareSort(int N){
     printf("NOT SORTED\n");
   else
     printf("SORTED!\n");
-  /*
-  For drawing a bar graph representing the data
-
-  SDL_Window* window = nullptr;
-  SDL_Renderer* renderer = nullptr;
-
-  if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-    std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
-    return -1;
-  }
-  window = SDL_CreateWindow("Bar Graph", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-  if (window == nullptr) {
-    std::cerr << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
-    return -1;
-  }
-
-  renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-  if (renderer == nullptr) {
-    std::cerr << "Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
-    return -1;
-  }
-
-  bool quit = false;
-  SDL_Event e;
-
-  // Main loop to render the graph
-  while (!quit) {
-    while (SDL_PollEvent(&e) != 0) {
-      if (e.type == SDL_QUIT) 
-        quit = true;
-    }
-    drawBarGraph(renderer, h_data);
-  }
-
-  SDL_DestroyRenderer(renderer);
-  SDL_DestroyWindow(window);
-  SDL_Quit();
-  free(d_data);
-  free(cpu_data);
-  */
+    
 #endif
 }
 

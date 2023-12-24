@@ -317,6 +317,35 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
 }
 
 template<typename T, fptr_t f>
+__device__ void mmp(T* input, T* output, int* start, int* end, int size, int outputOffset) {
+  int warpInBlock = threadIdx.x>>5;
+  int tid = threadIdx.x&(W-1);
+  __shared__ T heapData[B*(2*K-1)*(THREADS>>5)]; // Each warp in the block needs its own shared memory
+  T* heap = heapData+((B*(2*K-1))*warpInBlock);
+
+  int path[PL+1];
+
+  buildHeap<T,f>(input, heap, start, end, size,tid);
+    __syncwarp(); // unnecessary
+
+  int outputIdx=tid+outputOffset;
+  int nodeIdx;
+
+  while(heap[B-1] != MAXVAL) {
+    output[outputIdx] = heap[tid];
+    outputIdx += B;
+    nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path, tid);
+    fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
+  }
+
+  __syncwarp();
+
+  if(heap[tid] != MAXVAL) {
+    output[outputIdx] = heap[tid];
+  }
+}
+
+template<typename T, fptr_t f>
 __device__ void multimergePipelineEdgeCaseFull(T* input, T* output, int* start, int* end, int size, int outputOffset) {
   int warpInBlock = threadIdx.x>>5;
   int tid = threadIdx.x&(W-1);
@@ -344,23 +373,8 @@ __device__ void multimergePipelineEdgeCaseFull(T* input, T* output, int* start, 
 
 template<typename T, fptr_t f>
 __device__ void multimergePipelineEdgeCasePartial(T* input, T* output, int* start, int* end, int size, int smallerSize, int outputOffset, int L) {
-  /*
-  We use the state flag to indicate which phase we are in for the partially filled sub-array
-  0 = Have not found the set of elements<W that make up the incomplete sub-array
-  1 = Found the set of elements<W that make up the incomplete sub-array
-  2 = Finished processing the incomplete sub-array
-
-  The table indicates from which index to access the heap/global memory.
-  The fromGlobalMemory table is a table of booleans that indicate whether
-  to reload the buffer from global memory or from a node in the heap. 
-  -1 = Don't fill from anywhere (because out of bounds)
-  0 = Fill from other nodes in heap
-  1 = Fill from global memory
-  */
-  __shared__ int table[(2*K-1)];
-  __shared__ int fromGlobalMemory[(2*K-1)];
-  int state = 0;
-  int warpInBlock = threadIdx.x>>5;
+  
+  
   int tid = threadIdx.x&(W-1);
   __shared__ T heap[B*(2*K-1)];
 
@@ -368,6 +382,7 @@ __device__ void multimergePipelineEdgeCasePartial(T* input, T* output, int* star
 
   buildHeap<T,f>(input, heap, start, end, size,tid);
 
+  /*
   int outputIdx=tid+outputOffset;
   int nodeIdx;
 
@@ -383,6 +398,7 @@ __device__ void multimergePipelineEdgeCasePartial(T* input, T* output, int* star
   if(heap[tid] != MAXVAL) {
     output[outputIdx] = heap[tid];
   }
+  */
 
 }
 // Merge K lists into one using 1 warp

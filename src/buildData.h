@@ -27,7 +27,7 @@
 template<typename T>
 void create_sorted_list(T* data, int size, int addVal) {
   for(int i=0; i<size; i++) {
-    T[data] = i;
+    data[i] = i;
   }
 }
 
