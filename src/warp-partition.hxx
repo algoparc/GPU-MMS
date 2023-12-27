@@ -315,8 +315,6 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
   int totalWarps = P*(THREADS/W);
   
   warpsPerTask = totalWarps/tasks; // floor
-  if (blockIdx.x == 0 && threadIdx.x == 0)
-    printf("wpt = %d\n", warpsPerTask);
       //if (blockIdx.x == 0) {
       //  printf("tasks: %d\n", tasks);
       //}
