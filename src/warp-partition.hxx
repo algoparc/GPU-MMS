@@ -161,6 +161,8 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
   int tid = threadIdx.x%W;
   int warpInBlock = threadIdx.x/W;
   int targetPivot = ((warpIdInTask)*((size*K)/warpsPerTask));
+  if (tid == 0 && blockIdx.x == 1)
+    printf("Target: %d\n", targetPivot);
   T minVal,maxVal;
   int minIdx, maxIdx;
 
@@ -201,30 +203,44 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
   }
 
 __syncwarp();
+if (tid == 0 && blockIdx.x == 1){
+    printf("PIVOTS: %d %d %d %d\n", tempPivots[0], tempPivots[1], tempPivots[2], tempPivots[3]);
+}
 
 // find min and max elts of list
   if(warpIdInTask > 0) {
     // Set initial candidate values
-    if(tid < K) {
+    if(tid < K && tempPivots[tid] > 0) {
       candidates[warpInBlock*K+tid] = data[size*tid + tempPivots[tid]];
     }
+    
 
     __shared__ T partVal[THREADS/W];
     __shared__ int partList[THREADS/W];
-    __syncwarp(); // unnecessary
+    __syncwarp();
+    
+    int L = 0;   // L represents L-way mergesort instead of K-way
+    for (int i = 1; i <= K; i++) {
+      if (tempPivots[i-1] > 0) {
+        L = i;
+      }
+    }
 // Sequential section per warp 
     if(tid==0) {
+      
       partVal[warpInBlock]=MAXVAL;
       int tempPartitionVal;
       int iterIdx;
       minVal=0;
       maxVal=1;
-
       while(partVal[warpInBlock] == MAXVAL) {
+        if (tid == 0 && blockIdx.x == 1)
+      printf("CANDIDATES: %d %d %d %d\n", candidates[warpInBlock*K], candidates[warpInBlock*K+1], candidates[warpInBlock*K+2], candidates[warpInBlock*K+3]);
       minVal=MAXVAL;
       maxVal=MINVAL;
-        // find min and max - OPTIMIZE use K threads to do min and max reduction
-        for(int i=0; i<K; i++) {
+
+          
+        for(int i=0; i<L; i++) {
           iterIdx = warpInBlock*K + i;
           if(cmp(candidates[iterIdx], minVal) && tempPivots[i] < size-1) {
             minVal = candidates[iterIdx];
@@ -237,6 +253,7 @@ __syncwarp();
         }
 // Move min and/or max candidates based on target order statistic
         tempPartitionVal = partitionVal[warpInBlock];
+        
 
           // If we need to move min candidate
         if(targetPivot >= tempPartitionVal) {
@@ -260,12 +277,14 @@ __syncwarp();
           tempPivots[maxIdx]=(endBoundary[warpInBlock*K+maxIdx]+startBoundary[warpInBlock*K+maxIdx])/2;
           candidates[warpInBlock*K + maxIdx] = data[size*maxIdx + tempPivots[maxIdx]];
           if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0) 
- //         {
             partVal[warpInBlock] = candidates[warpInBlock*K + maxIdx];
-            partList[warpInBlock] = maxIdx;
-          }
+          partList[warpInBlock] = maxIdx;
         }
+        if (tid == 0 && blockIdx.x == 1)
+          printf("PIVOTS: %d %d %d %d\n", tempPivots[0], tempPivots[1], tempPivots[2], tempPivots[3]);
+        
       }
+    }
       // Binary search each other list to find predecessor of partitioning value
     __syncwarp();
 
@@ -274,7 +293,7 @@ __syncwarp();
     }
 
     int step;
-    if(tid < K) {
+    if(tid < L) {
       if(tid != partList[warpInBlock]) {
         tempPivots[tid] = end/2;            // end/2 as opposed to size/2
         step = end/4;
@@ -293,9 +312,9 @@ __syncwarp();
       }
     }
   }
-
-  //if (tid == 0)
-  //  printf("PIVOTS: %d %d %d %d\n", tempPivots[0], tempPivots[1], tempPivots[2], tempPivots[3]);
+  __syncwarp();
+  if (tid == 0 && blockIdx.x == 1)
+    printf("PIVOTS: %d %d %d %d\n", tempPivots[0], tempPivots[1], tempPivots[2], tempPivots[3]);
 }
 
 // Find pivots K pivots for each warp within a 'task' (a group of K lists)

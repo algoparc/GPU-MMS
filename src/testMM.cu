@@ -64,6 +64,7 @@ int main(int argc, char **argv)
 template <typename T>
 void test_multimergesort(int p, int N)
 {
+  cudaError_t err;
   cudaEvent_t start, stop;
   float time_elapsed = 0.0;
   float minTime = 99999;
@@ -107,7 +108,8 @@ void test_multimergesort(int p, int N)
     cudaEventRecord(start, 0);
 
     // Run GPU-MMS.  T is datatype and cmp is comparison function (defined in cmp.hxx)
-    pad<T><<<1,padding>>>(d_data+N, MAXVAL - 1);
+    if (padding)
+      pad<T><<<1,padding>>>(d_data+N, MAXVAL - 1);
     d_output = multimergesort<T, cmp>(d_data, d_output, h_data, p, N+padding);
     cudaDeviceSynchronize();
 
