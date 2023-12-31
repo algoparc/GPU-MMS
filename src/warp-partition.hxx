@@ -161,8 +161,6 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
   int tid = threadIdx.x%W;
   int warpInBlock = threadIdx.x/W;
   int targetPivot = ((warpIdInTask)*((size*K)/warpsPerTask));
-  if (tid == 0 && blockIdx.x == 1)
-    printf("Target: %d\n", targetPivot);
   T minVal,maxVal;
   int minIdx, maxIdx;
 
@@ -203,9 +201,6 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
   }
 
 __syncwarp();
-if (tid == 0 && blockIdx.x == 1){
-    printf("PIVOTS: %d %d %d %d\n", tempPivots[0], tempPivots[1], tempPivots[2], tempPivots[3]);
-}
 
 // find min and max elts of list
   if(warpIdInTask > 0) {
@@ -234,8 +229,6 @@ if (tid == 0 && blockIdx.x == 1){
       minVal=0;
       maxVal=1;
       while(partVal[warpInBlock] == MAXVAL) {
-        if (tid == 0 && blockIdx.x == 1)
-      printf("CANDIDATES: %d %d %d %d\n", candidates[warpInBlock*K], candidates[warpInBlock*K+1], candidates[warpInBlock*K+2], candidates[warpInBlock*K+3]);
       minVal=MAXVAL;
       maxVal=MINVAL;
 
@@ -280,8 +273,6 @@ if (tid == 0 && blockIdx.x == 1){
             partVal[warpInBlock] = candidates[warpInBlock*K + maxIdx];
           partList[warpInBlock] = maxIdx;
         }
-        if (tid == 0 && blockIdx.x == 1)
-          printf("PIVOTS: %d %d %d %d\n", tempPivots[0], tempPivots[1], tempPivots[2], tempPivots[3]);
         
       }
     }
@@ -312,9 +303,6 @@ if (tid == 0 && blockIdx.x == 1){
       }
     }
   }
-  __syncwarp();
-  if (tid == 0 && blockIdx.x == 1)
-    printf("PIVOTS: %d %d %d %d\n", tempPivots[0], tempPivots[1], tempPivots[2], tempPivots[3]);
 }
 
 // Find pivots K pivots for each warp within a 'task' (a group of K lists)
