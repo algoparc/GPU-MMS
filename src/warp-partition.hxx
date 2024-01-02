@@ -33,6 +33,7 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
   int tid = threadIdx.x%W;
   int warpInBlock = threadIdx.x/W;
   int targetPivot = ((warpIdInTask)*((size*K)/warpsPerTask));
+  int numSearchesCompleted = 0;
   T minVal,maxVal;
   int minIdx, maxIdx;
 
@@ -45,12 +46,14 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
 
  volatile  __shared__ int startBoundary[K*WARPS];
  volatile  __shared__ int endBoundary[K*WARPS];
+ volatile  __shared__ int completedSearch[K*WARPS];
 
   // Initialize boundary positions
-  if(threadIdx.x < K*WARPS) {
-    startBoundary[threadIdx.x] = 0;
-    endBoundary[threadIdx.x] = size-1;
+  if(tid < K) {
+    startBoundary[warpInBlock*K + tid] = 0;
+    endBoundary[warpInBlock*K + tid] = size-1;
     tempPivots[tid] = size/2;
+    completedSearch[warpInBlock*K + tid] = 0;
   }
 
 // first warp of task begins at start of every list
@@ -58,13 +61,8 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
     tempPivots[tid] = 0;
   }
 
+// Critical: This cannot just be a __syncwarp() operation, since for initialization, we use a single warp to do it. The other warps must wait for that one warp to initialize the arrays.
 __syncwarp();
-
-/*----------------------------------
-
-See Figure 1 in 'figures' directory
-
------------------------------------*/
 
 // find min and max elts of list
   if(warpIdInTask > 0) {
@@ -84,17 +82,17 @@ See Figure 1 in 'figures' directory
       minVal=0;
       maxVal=1;
 
-      while(partVal[warpInBlock] == MAXVAL) {
+      while(numSearchesCompleted < K) {
       minVal=MAXVAL;
       maxVal=MINVAL;
         // find min and max - OPTIMIZE use K threads to do min and max reduction
         for(int i=0; i<K; i++) {
           iterIdx = warpInBlock*K + i;
-          if(cmp(candidates[iterIdx], minVal) && tempPivots[i] < size-1) {
+          if(!completedSearch[iterIdx] && cmp(candidates[iterIdx], minVal) && tempPivots[i] < size-1) {
             minVal = candidates[iterIdx];
             minIdx = i;
           }
-          if(cmp(maxVal, candidates[iterIdx]) && tempPivots[i] > 0) {
+          if(!completedSearch[iterIdx] && cmp(maxVal, candidates[iterIdx]) && tempPivots[i] > 0) {
             maxVal = candidates[iterIdx];
             maxIdx = i;
           }
@@ -112,45 +110,27 @@ See Figure 1 in 'figures' directory
             partitionVal[warpInBlock]++;
           }
           candidates[warpInBlock*K + minIdx] = data[size*minIdx + tempPivots[minIdx]];
-          if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx] && tempPivots[minIdx] < size-1) 
-//          {
+          if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx] && tempPivots[minIdx] < size-1) {
+            numSearchesCompleted++;
             partVal[warpInBlock] = candidates[warpInBlock*K + minIdx];
             partList[warpInBlock] = minIdx;
-//          }
+            completedSearch[warpInBlock*K + minIdx] = 1;
+          }
         } 
         else { // If we need to move max candidate
           partitionVal[warpInBlock] -= (tempPivots[maxIdx] - startBoundary[warpInBlock*K + maxIdx])/2; // Increase rank of current partition boundary
           endBoundary[warpInBlock*K + maxIdx] = tempPivots[maxIdx];
           tempPivots[maxIdx]=(endBoundary[warpInBlock*K+maxIdx]+startBoundary[warpInBlock*K+maxIdx])/2;
           candidates[warpInBlock*K + maxIdx] = data[size*maxIdx + tempPivots[maxIdx]];
-          if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0) 
- //         {
+          if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0) {
+            numSearchesCompleted++;
             partVal[warpInBlock] = candidates[warpInBlock*K + maxIdx];
             partList[warpInBlock] = maxIdx;
+            completedSearch[warpInBlock*K + maxIdx] = 1;
           }
         }
       }
-      // Binary search each other list to find predecessor of partitioning value
-    __syncwarp();
-
-    int step;
-    if(tid < K) {
-      if(tid != partList[warpInBlock]) {
-        tempPivots[tid] = size/2;
-        step = size/4;
-
-        while(step >= 1) {
-          if(!cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock])) 
-            tempPivots[tid] -= step;
-          else 
-            tempPivots[tid] += step;
-          step /=2;
-        }
-        if(tempPivots[tid] > 0 && cmp(partVal[warpInBlock], (data[size*tid + tempPivots[tid]-1])))
-          tempPivots[tid]--;
-        if(cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock]))
-          tempPivots[tid]++;
-      }
+      // printf("PIVOTS: %d %d %d %d\n", tempPivots[0], tempPivots[1], tempPivots[2], tempPivots[3]);
     }
   }
 }
@@ -340,6 +320,7 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
       warpIdInTask = warpIdx - myTask*warpsPerTask;
 
       warp_partition<T>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask);
+      __syncwarp();
       if(tid < K) {
         pivots[warpIdx*K+tid] = myPivots[tid];
       }
