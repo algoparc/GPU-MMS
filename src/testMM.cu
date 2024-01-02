@@ -28,7 +28,7 @@
 
 #define DEBUG 1  // Set this to 1 to check that the output is correctly sorted
 #define ITERS 2 // Number of iterations to compute average runtime
-#define BLOCKS 128
+#define BLOCKS 1024
 
 /* CPU FUNCTION HEADERS*/
 template<typename T>
