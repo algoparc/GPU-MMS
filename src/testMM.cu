@@ -29,8 +29,8 @@
 
 #define DEBUG 1 // Set this to 1 to check that the output is correctly sorted
 #define PRINT 0 // Set this to 1 to print first M elements of the array for further debugging
-#define ITERS 1 // Number of iterations to compute average runtime
-#define BLOCKS 128
+#define ITERS 4 // Number of iterations to compute average runtime
+#define BLOCKS 1024
 
 /* CPU FUNCTION HEADERS*/
 template <typename T>
@@ -53,8 +53,8 @@ int main(int argc, char **argv)
   }
 
   int N = atoi(argv[1]);
-  // test_multimergesort<DATATYPE>(BLOCKS, N);
-  test_squareSort<DATATYPE>(N);
+  test_multimergesort<DATATYPE>(BLOCKS, N);
+  // test_squareSort<DATATYPE>(N);
 
   return 0;
 }
@@ -88,10 +88,6 @@ void test_multimergesort(int p, int N)
 
     // Copy list to GPU
     cudaMemcpy(d_data, h_data, N * sizeof(T), cudaMemcpyHostToDevice);
-
-    // Zero out result array
-    cudaMalloc(&d_output, N * sizeof(T));
-    //  cudaMemset(&d_output, 0, N*sizeof(T));
 
     cudaDeviceSynchronize();
     // Timer functions
@@ -219,11 +215,11 @@ void test_squareSort(int N){
 #ifdef DEBUG
   bool sorted = true;
 
-  int start_of_base_case;
-  for (start_of_base_case=0; start_of_base_case<=N-M; start_of_base_case += M)
-    selection_sort<int, host_cmp>(cpu_data + start_of_base_case, M);
-  selection_sort<int, host_cmp>(cpu_data + start_of_base_case, N-start_of_base_case);
-  test_arrayEquality<int, host_cmp>(cpu_data, h_data, M*(N/M)); // Compare a number of elements equal to the greatest multiple of M.
+  // int start_of_base_case;
+  // for (start_of_base_case=0; start_of_base_case<=N-M; start_of_base_case += M)
+  //  selection_sort<int, host_cmp>(cpu_data + start_of_base_case, M);
+  // selection_sort<int, host_cmp>(cpu_data + start_of_base_case, N-start_of_base_case);
+  // test_arrayEquality<int, host_cmp>(cpu_data, h_data, M*(N/M)); // Compare a number of elements equal to the greatest multiple of M.
 #if PRINT == 1
   printf("[%d", h_data[0]);
   for (int i = 1; i < N; i++)
