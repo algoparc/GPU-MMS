@@ -56,7 +56,7 @@ __global__ void print_count() {
   if(threadIdx.x==0 && blockIdx.x==0) printf("cmps:%d\n", tot_cmp);
 }
 
-#define ERROR_LOGS
+// #define ERROR_LOGS
 
 /* Main CPU function that sorts an input and writes the result to output 
    Parameters:
@@ -215,9 +215,9 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         printf("CASE 3\n");
         #endif
         findPartitions<T><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P);
-        cudaDeviceSynchronize();
-        testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
+        //testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
+        //cudaDeviceSynchronize();
         #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
@@ -252,9 +252,11 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       #endif
       if (edgeCaseTaskSize > listSize) {
         #ifdef ERROR_LOGS
-        printf("CASE 6: %d\n", listSize);
+        printf("CASE 5: %d\n", listSize);
         #endif
         fp<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
+        // testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
+        // cudaDeviceSynchronize();
         #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
