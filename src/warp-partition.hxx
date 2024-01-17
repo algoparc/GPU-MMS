@@ -25,8 +25,12 @@
 #include<algorithm>
 #include "params.h"
 
+// #define PARTITION_ERROR_LOGS
+#define BLOCK 1
 
 // Find a set of pivots for a given partition
+// The selected pivot will always be between [start, end)
+// In other words, start boundary is inclusive, and end boundary is exclusive
 template<typename T>
 __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerTask, int warpIdInTask) {
   const int WARPS = THREADS/W;
@@ -38,11 +42,6 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
   int minIdx, maxIdx;
 
   __shared__ T candidates[K*WARPS];
-  __shared__ int partitionVal[WARPS];
-
-  if(threadIdx.x < WARPS) {
-    partitionVal[threadIdx.x] = (size*K)/2;
-  }
 
  volatile  __shared__ int startBoundary[K*WARPS];
  volatile  __shared__ int endBoundary[K*WARPS];
@@ -51,8 +50,8 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
   // Initialize boundary positions
   if(tid < K) {
     startBoundary[warpInBlock*K + tid] = 0;
-    endBoundary[warpInBlock*K + tid] = size-1;
-    tempPivots[tid] = size/2;
+    endBoundary[warpInBlock*K + tid] = size;
+    tempPivots[tid] = ((warpIdInTask)*(size/warpsPerTask));
     completedSearch[warpInBlock*K + tid] = 0;
   }
 
@@ -60,6 +59,16 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
   if(warpIdInTask == 0 && tid < K) {
     tempPivots[tid] = 0;
   }
+  #ifdef PARTITION_ERROR_LOGS
+  if (blockIdx.x == BLOCK && tid == 0){
+    for (int i=0; i<K; i++) {
+      for (int j=0; j<3; j++) {
+        printf("%d ", data[size*i + tempPivots[i] + j]);
+      }
+      printf("\n");
+    }
+  }
+  #endif
 
 // Critical: This cannot just be a __syncwarp() operation, since for initialization, we use a single warp to do it. The other warps must wait for that one warp to initialize the arrays.
 __syncwarp();
@@ -72,12 +81,16 @@ __syncwarp();
     }
     __syncwarp();
 
-    __shared__ T partVal[THREADS/W];
-    __shared__ int partList[THREADS/W];
 // Sequential section per warp 
     if(tid==0) {
-      partVal[warpInBlock]=MAXVAL;
-      int tempPartitionVal;
+      #ifdef PARTITION_ERROR_LOGS
+      if (blockIdx.x == BLOCK) {
+          printf("START: %d %d %d %d\n", startBoundary[warpInBlock*K], startBoundary[warpInBlock*K+1], startBoundary[warpInBlock*K+2], startBoundary[warpInBlock*K+3]);
+          printf("END: %d %d %d %d\n", endBoundary[warpInBlock*K], endBoundary[warpInBlock*K+1], endBoundary[warpInBlock*K+2], endBoundary[warpInBlock*K+3]);
+          printf("PIVOTS: %d %d %d %d\n", tempPivots[0], tempPivots[1], tempPivots[2], tempPivots[3]);
+          printf("COMPLETED: %d %d %d %d\n", completedSearch[warpInBlock*K], completedSearch[warpInBlock*K+1], completedSearch[warpInBlock*K+2], completedSearch[warpInBlock*K+3]);
+        }
+      #endif
       int iterIdx;
       minVal=0;
       maxVal=1;
@@ -85,6 +98,8 @@ __syncwarp();
       while(numSearchesCompleted < K) {
       minVal=MAXVAL;
       maxVal=MINVAL;
+      minIdx = -1;
+      maxIdx = -1;
         // find min and max - OPTIMIZE use K threads to do min and max reduction
         for(int i=0; i<K; i++) {
           iterIdx = warpInBlock*K + i;
@@ -97,192 +112,110 @@ __syncwarp();
             maxIdx = i;
           }
         }
-// Move min and/or max candidates based on target order statistic
-        tempPartitionVal = partitionVal[warpInBlock];
+        if (minIdx == maxIdx)
+          break;
 
-          // If we need to move min candidate
-        if(targetPivot >= tempPartitionVal) {
-          partitionVal[warpInBlock] += (endBoundary[warpInBlock*K + minIdx] - tempPivots[minIdx])/2; // Increase rank of current partition boundary
-          startBoundary[warpInBlock*K + minIdx] = tempPivots[minIdx];
-          tempPivots[minIdx]=(endBoundary[warpInBlock*K+minIdx]+startBoundary[warpInBlock*K+minIdx])/2;
-          if(tempPivots[minIdx] == startBoundary[warpInBlock*K + minIdx]) { // Edge case
-            tempPivots[minIdx]++; 
-            partitionVal[warpInBlock]++;
-          }
-          candidates[warpInBlock*K + minIdx] = data[size*minIdx + tempPivots[minIdx]];
-          if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx] && tempPivots[minIdx] < size-1) {
-            numSearchesCompleted++;
-            partVal[warpInBlock] = candidates[warpInBlock*K + minIdx];
-            partList[warpInBlock] = minIdx;
-            completedSearch[warpInBlock*K + minIdx] = 1;
-          }
-        } 
-        else { // If we need to move max candidate
-          partitionVal[warpInBlock] -= (tempPivots[maxIdx] - startBoundary[warpInBlock*K + maxIdx])/2; // Increase rank of current partition boundary
-          endBoundary[warpInBlock*K + maxIdx] = tempPivots[maxIdx];
-          tempPivots[maxIdx]=(endBoundary[warpInBlock*K+maxIdx]+startBoundary[warpInBlock*K+maxIdx])/2;
-          candidates[warpInBlock*K + maxIdx] = data[size*maxIdx + tempPivots[maxIdx]];
-          if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0) {
-            numSearchesCompleted++;
-            partVal[warpInBlock] = candidates[warpInBlock*K + maxIdx];
-            partList[warpInBlock] = maxIdx;
-            completedSearch[warpInBlock*K + maxIdx] = 1;
+        int minIdxBoundaryShift;
+        int maxIdxBoundaryShift;
+        int sharedBoundaryShift;
+
+        minIdxBoundaryShift = tempPivots[minIdx] - startBoundary[warpInBlock*K + minIdx];
+        maxIdxBoundaryShift = endBoundary[warpInBlock*K + maxIdx] - tempPivots[maxIdx]; // Increase rank of current partition boundary
+        #ifdef PARTITION_ERROR_LOGS
+        if (blockIdx.x == BLOCK) {
+          printf("INDICES: %d %d\n", minIdx, maxIdx);
+          printf("SHIFTS: %d %d\n", minIdxBoundaryShift, maxIdxBoundaryShift);
+        }
+        #endif
+
+        if (minIdxBoundaryShift == 0) {
+          completedSearch[warpInBlock*K + minIdx] = 1;
+          numSearchesCompleted++;
+          continue;
+        }
+        if (maxIdxBoundaryShift == 0) {
+          completedSearch[warpInBlock*K + maxIdx] = 1;
+          numSearchesCompleted++;
+          continue;
+        }
+        if (minIdxBoundaryShift > maxIdxBoundaryShift) {
+          sharedBoundaryShift = maxIdxBoundaryShift;
+        } else {
+          sharedBoundaryShift = minIdxBoundaryShift;
+        }
+        
+        startBoundary[warpInBlock*K + minIdx] += sharedBoundaryShift;
+        endBoundary[warpInBlock*K + maxIdx] -= sharedBoundaryShift;
+        // END OF CHANGES
+        int minIdxPivotShift = 0; 
+        tempPivots[minIdx]=(endBoundary[warpInBlock*K+minIdx]+startBoundary[warpInBlock*K+minIdx])/2;
+        tempPivots[maxIdx]=(endBoundary[warpInBlock*K+maxIdx]+startBoundary[warpInBlock*K+maxIdx])/2;
+        
+        candidates[warpInBlock*K + minIdx] = data[size*minIdx + tempPivots[minIdx]];
+        if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx]-1 && tempPivots[minIdx] < size) {
+          numSearchesCompleted++;
+          completedSearch[warpInBlock*K + minIdx] = 1;
+        } // Increase rank of current partition boundary
+        candidates[warpInBlock*K + maxIdx] = data[size*maxIdx + tempPivots[maxIdx]];
+        if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx]-1 && tempPivots[maxIdx] > 0) {
+          numSearchesCompleted++;
+          completedSearch[warpInBlock*K + maxIdx] = 1;
+        }
+        #ifdef PARTITION_ERROR_LOGS
+        if (blockIdx.x == BLOCK) {
+          printf("START: %d %d %d %d\n", startBoundary[warpInBlock*K], startBoundary[warpInBlock*K+1], startBoundary[warpInBlock*K+2], startBoundary[warpInBlock*K+3]);
+          printf("END: %d %d %d %d\n", endBoundary[warpInBlock*K], endBoundary[warpInBlock*K+1], endBoundary[warpInBlock*K+2], endBoundary[warpInBlock*K+3]);
+          printf("PIVOTS: %d %d %d %d\n", tempPivots[0], tempPivots[1], tempPivots[2], tempPivots[3]);
+          printf("COMPLETED: %d %d %d %d\n", completedSearch[warpInBlock*K], completedSearch[warpInBlock*K+1], completedSearch[warpInBlock*K+2], completedSearch[warpInBlock*K+3]);
+        }
+        #endif
+
+      }
+      
+    }
+    
+  }
+  __syncthreads();
+  if (warpIdInTask > 0 && tid < K) {
+    if (tempPivots[tid] >= size) {
+      tempPivots[tid] = size-1;
+    } else {
+      tempPivots[tid]++; // We need to add 1, because we have the property that pivot[i] <= pivot[j+1] for all pivots
+    }
+    #ifdef PARTITION_ERROR_LOGS
+    if (blockIdx.x == BLOCK && tid == 0){
+      for (int i=0; i<K; i++) {
+        for (int j=-2; j<3; j++) {
+          printf("%d ", data[size*i + tempPivots[i] + j]);
+        }
+        printf("\n");
+      }
+    }
+    #endif
+  }
+  __syncwarp();
+  // Make slight adjustments as needed
+  /*
+  if (tid == 0){
+    int changed = 0;
+    do {
+      changed = 0;
+      for (int i=0; i<K; i++) {
+        for (int j=1; j<K; j++) {
+          if (data[size*i + tempPivots[i] - 1] > data[size*j + tempPivots[j]]) {
+            tempPivots[j]++;
+            changed = 1;
           }
         }
       }
-      // printf("PIVOTS: %d %d %d %d\n", tempPivots[0], tempPivots[1], tempPivots[2], tempPivots[3]);
-    }
+    } while (changed);
+
   }
+  */
 }
 
 template<typename T>
 __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int warpIdInTask, int edgeCaseTaskSize) {
-  const int WARPS = THREADS/W;
-  int tid = threadIdx.x%W;
-  int warpInBlock = threadIdx.x/W;
-  int targetPivot = ((warpIdInTask)*((size*K)/warpsPerTask));
-  T minVal,maxVal;
-  int minIdx, maxIdx;
-
-  __shared__ T candidates[K*WARPS];
-  __shared__ int partitionVal[WARPS];
-
- volatile  __shared__ int startBoundary[K*WARPS];
- volatile  __shared__ int endBoundary[K*WARPS];
-
-  int end = 0;
-  // Initialize boundary positions
-  if(tid < K) {
-
-    startBoundary[warpInBlock*K + tid] = 0;
-    int difference = edgeCaseTaskSize - tid*size;
-    if (difference >= 0) {
-      end = (difference < size)*difference + (size <= difference)*size; // Minimum of difference and size, using predicate logic
-    }
-    endBoundary[warpInBlock*K + tid] = end;
-    tempPivots[tid] = end/2;
-  }
-  __syncwarp();
-
-  if(tid==0) {
-    int sum = 0;
-    for (int i = 0; i < K; i++) {
-      sum += tempPivots[i];
-    }
-    partitionVal[warpInBlock] = sum;
-  }
-  __syncwarp();
-
-  // Edge case 
-
-// first warp of task begins at start of every list
-  if(warpIdInTask == 0 && tid < K) {
-    tempPivots[tid] = 0;
-  }
-
-__syncwarp();
-
-// find min and max elts of list
-  if(warpIdInTask > 0) {
-    // Set initial candidate values
-    if(tid < K && tempPivots[tid] > 0) {
-      candidates[warpInBlock*K+tid] = data[size*tid + tempPivots[tid]];
-    }
-    
-
-    __shared__ T partVal[THREADS/W];
-    __shared__ int partList[THREADS/W];
-    __syncwarp();
-    
-    int L = 0;   // L represents L-way mergesort instead of K-way
-    for (int i = 1; i <= K; i++) {
-      if (tempPivots[i-1] > 0) {
-        L = i;
-      }
-    }
-// Sequential section per warp 
-    if(tid==0) {
-      
-      partVal[warpInBlock]=MAXVAL;
-      int tempPartitionVal;
-      int iterIdx;
-      minVal=0;
-      maxVal=1;
-      while(partVal[warpInBlock] == MAXVAL) {
-      minVal=MAXVAL;
-      maxVal=MINVAL;
-
-          
-        for(int i=0; i<L; i++) {
-          iterIdx = warpInBlock*K + i;
-          if(cmp(candidates[iterIdx], minVal) && tempPivots[i] < size-1) {
-            minVal = candidates[iterIdx];
-            minIdx = i;
-          }
-          if(cmp(maxVal, candidates[iterIdx]) && tempPivots[i] > 0) {
-            maxVal = candidates[iterIdx];
-            maxIdx = i;
-          }
-        }
-// Move min and/or max candidates based on target order statistic
-        tempPartitionVal = partitionVal[warpInBlock];
-        
-
-          // If we need to move min candidate
-        if(targetPivot >= tempPartitionVal) {
-          partitionVal[warpInBlock] += (endBoundary[warpInBlock*K + minIdx] - tempPivots[minIdx])/2; // Increase rank of current partition boundary
-          startBoundary[warpInBlock*K + minIdx] = tempPivots[minIdx];
-          tempPivots[minIdx]=(endBoundary[warpInBlock*K+minIdx]+startBoundary[warpInBlock*K+minIdx])/2;
-          if(tempPivots[minIdx] == startBoundary[warpInBlock*K + minIdx]) { // Edge case
-            tempPivots[minIdx]++; 
-            partitionVal[warpInBlock]++;
-          }
-          candidates[warpInBlock*K + minIdx] = data[size*minIdx + tempPivots[minIdx]];
-          if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx] && tempPivots[minIdx] < size-1) 
-//          {
-            partVal[warpInBlock] = candidates[warpInBlock*K + minIdx];
-            partList[warpInBlock] = minIdx;
-//          }
-        } 
-        else { // If we need to move max candidate
-          partitionVal[warpInBlock] -= (tempPivots[maxIdx] - startBoundary[warpInBlock*K + maxIdx])/2; // Increase rank of current partition boundary
-          endBoundary[warpInBlock*K + maxIdx] = tempPivots[maxIdx];
-          tempPivots[maxIdx]=(endBoundary[warpInBlock*K+maxIdx]+startBoundary[warpInBlock*K+maxIdx])/2;
-          candidates[warpInBlock*K + maxIdx] = data[size*maxIdx + tempPivots[maxIdx]];
-          if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0) 
-            partVal[warpInBlock] = candidates[warpInBlock*K + maxIdx];
-          partList[warpInBlock] = maxIdx;
-        }
-        
-      }
-    }
-      // Binary search each other list to find predecessor of partitioning value
-    __syncwarp();
-
-    if (tid < K && tempPivots[tid] >= end) {
-      tempPivots[tid] = end-1;
-    }
-
-    int step;
-    if(tid < L) {
-      if(tid != partList[warpInBlock]) {
-        tempPivots[tid] = end/2;            // end/2 as opposed to size/2
-        step = end/4;
-
-        while(step >= 1) {
-          if(!cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock])) 
-            tempPivots[tid] -= step;
-          else 
-            tempPivots[tid] += step;
-          step /=2;
-        }
-        if(tempPivots[tid] > 0 && cmp(partVal[warpInBlock], (data[size*tid + tempPivots[tid]-1])))
-          tempPivots[tid]--;
-        if(cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock]))
-          tempPivots[tid]++;
-      }
-    }
-  }
 }
 
 // Find pivots K pivots for each warp within a 'task' (a group of K lists)
@@ -329,7 +262,6 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
       }
     }
   }
-  
 }
 
 // If there is an edge case
