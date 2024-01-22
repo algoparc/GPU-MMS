@@ -65,6 +65,7 @@ __syncwarp();
 See Figure 1 in 'figures' directory
 
 -----------------------------------*/
+  int completedSearches[K];
 
 // find min and max elts of list
   if(warpIdInTask > 0) {
@@ -78,25 +79,36 @@ See Figure 1 in 'figures' directory
     __shared__ int partList[THREADS/W];
 // Sequential section per warp 
     if(tid==0) {
+      for (int i=0; i<K; i++) {
+        completedSearches[i] = 0;
+      }
       partVal[warpInBlock]=MAXVAL;
       int tempPartitionVal;
       int iterIdx;
+      int numSearchesCompleted=0;
       minVal=0;
       maxVal=1;
 
-      while(partVal[warpInBlock] == MAXVAL) {
+      while(true) {
+      if (numSearchesCompleted >= K-1) {
+        break;
+      }
       minVal=MAXVAL;
       maxVal=MINVAL;
+      minIdx=-1;
+      maxIdx=-1;
         // find min and max - OPTIMIZE use K threads to do min and max reduction
         for(int i=0; i<K; i++) {
-          iterIdx = warpInBlock*K + i;
-          if(cmp(candidates[iterIdx], minVal) && tempPivots[i] < size-1) {
-            minVal = candidates[iterIdx];
-            minIdx = i;
-          }
-          if(cmp(maxVal, candidates[iterIdx]) && tempPivots[i] > 0) {
-            maxVal = candidates[iterIdx];
-            maxIdx = i;
+          if (!completedSearches[i]){
+            iterIdx = warpInBlock*K + i;
+            if(cmp(candidates[iterIdx], minVal) && tempPivots[i] < size) {
+              minVal = candidates[iterIdx];
+              minIdx = i;
+            }
+            if(cmp(maxVal, candidates[iterIdx]) && tempPivots[i] > 0) {
+              maxVal = candidates[iterIdx];
+              maxIdx = i;
+            }
           }
         }
 // Move min and/or max candidates based on target order statistic
@@ -112,46 +124,35 @@ See Figure 1 in 'figures' directory
             partitionVal[warpInBlock]++;
           }
           candidates[warpInBlock*K + minIdx] = data[size*minIdx + tempPivots[minIdx]];
-          if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx] && tempPivots[minIdx] < size-1) 
-//          {
-            partVal[warpInBlock] = candidates[warpInBlock*K + minIdx];
-            partList[warpInBlock] = minIdx;
-//          }
+          if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx] && tempPivots[minIdx] < size-1) {
+            completedSearches[minIdx] = 1;
+            numSearchesCompleted++;
+          }
         } 
         else { // If we need to move max candidate
           partitionVal[warpInBlock] -= (tempPivots[maxIdx] - startBoundary[warpInBlock*K + maxIdx])/2; // Increase rank of current partition boundary
           endBoundary[warpInBlock*K + maxIdx] = tempPivots[maxIdx];
           tempPivots[maxIdx]=(endBoundary[warpInBlock*K+maxIdx]+startBoundary[warpInBlock*K+maxIdx])/2;
           candidates[warpInBlock*K + maxIdx] = data[size*maxIdx + tempPivots[maxIdx]];
-          if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0) 
- //         {
-            partVal[warpInBlock] = candidates[warpInBlock*K + maxIdx];
-            partList[warpInBlock] = maxIdx;
+          if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0) {
+            completedSearches[maxIdx] = 1;
+            numSearchesCompleted++;
+          }
           }
         }
       }
-      // Binary search each other list to find predecessor of partitioning value
-    __syncwarp();
-
-    int step;
-    if(tid < K) {
-      if(tid != partList[warpInBlock]) {
-        tempPivots[tid] = size/2;
-        step = size/4;
-
-        while(step >= 1) {
-          if(!cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock])) 
-            tempPivots[tid] -= step;
-          else 
-            tempPivots[tid] += step;
-          step /=2;
-        }
-        if(tempPivots[tid] > 0 && cmp(partVal[warpInBlock], (data[size*tid + tempPivots[tid]-1])))
-          tempPivots[tid]--;
-        if(cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock]))
-          tempPivots[tid]++;
+  }
+  if (threadIdx.x == 0 && blockIdx.x == 2) {
+    for (int i=0; i<K; i++) {
+      if (!completedSearches[i]) {
+        printf("\033[0;31m");
+      }
+      printf("%d %d %d %d %d\n", data[size*i + tempPivots[i] - 2], data[size*i + tempPivots[i] - 1], data[size*i + tempPivots[i]], data[size*i + tempPivots[i] + 1], data[size*i + tempPivots[i] + 2]);
+      if (!completedSearches[i]) {
+        printf("\033[0m");
       }
     }
+    printf("-----------------------------------\n");
   }
 }
 
