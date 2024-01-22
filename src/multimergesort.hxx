@@ -335,6 +335,7 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
     if(tid<K) {
       start[tid] = pivots[(warpIdx*K)+tid];
     }
+    __syncwarp();
 
     if(tid<K) 
       end[tid] = pivots[(totalWarps*K)+tid]; // If tid<K, the right-hand side evaluates to size=listSize.

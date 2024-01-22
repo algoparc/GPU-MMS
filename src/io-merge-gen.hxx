@@ -215,6 +215,7 @@ __forceinline__ __device__ void xorMergeGeneral(T* elts, T* heap, int tid) {
         elts[j] = myMin<T,f>(temp[j],elts[j]);
       }
     }
+    __syncwarp();
   }     
 }
 
@@ -279,6 +280,7 @@ __device__ void buildHeap(T* input, T* heap, int* start, int* end, int size, int
       nodeIdx = (nodesAtLevel-1+j);
       nodeIdx = heapifyEmptyNode<T,f>(heap, nodeIdx, i, tid);
       fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
+      __syncwarp();
     }
     nodesAtLevel = nodesAtLevel >> 1;
   }
@@ -297,6 +299,7 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
 
 
   buildHeap<T,f>(input, heap, start, end, size,tid);
+  __syncwarp();
 
   int outputIdx=tid+outputOffset;
   int nodeIdx;
@@ -306,6 +309,7 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
     outputIdx += B;
     nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path, tid);
     fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
+    __syncwarp();
   }
 
   __syncwarp();
@@ -315,6 +319,7 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
   }
 
 }
+
 
 template<typename T, fptr_t f>
 __device__ void mmp(T* input, T* output, int* start, int* end, int size, int outputOffset) {
