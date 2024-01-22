@@ -22,8 +22,8 @@
 # NOTE: Change the compute capability in the nvcc commands below based on the GPU you are using.
 
 cd ../src
-for n in 2097152 4194304 8388608 16777216 33554432 67108864 134217728
+for n in {1..100}
 do
-    ./testMM $n
+    ./testMM $((2 ** 20 + 9))
   echo ""
 done
