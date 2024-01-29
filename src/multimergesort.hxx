@@ -56,7 +56,7 @@ __global__ void print_count() {
   if(threadIdx.x==0 && blockIdx.x==0) printf("cmps:%d\n", tot_cmp);
 }
 
-// #define ERROR_LOGS
+#define ERROR_LOGS
 
 /* Main CPU function that sorts an input and writes the result to output 
    Parameters:

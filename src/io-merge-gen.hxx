@@ -308,6 +308,7 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
     output[outputIdx] = heap[tid];
     outputIdx += B;
     nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path, tid);
+    __syncwarp();
     fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
     __syncwarp();
   }
