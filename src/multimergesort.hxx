@@ -56,7 +56,7 @@ __global__ void print_count() {
   if(threadIdx.x==0 && blockIdx.x==0) printf("cmps:%d\n", tot_cmp);
 }
 
-#define ERROR_LOGS
+// #define ERROR_LOGS
 
 /* Main CPU function that sorts an input and writes the result to output 
    Parameters:
@@ -248,12 +248,24 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       printf("listSize: %d\n", listSize);
       #endif
       if (edgeCaseTaskSize > listSize) {
+        #ifdef ERROR_LOGS
+        printf("CASE 5\n");
+        #endif
         fp<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
         #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("LINE 257 ERROR: %s\n", cudaGetErrorString(err));
+        }
+        cudaDeviceSynchronize();
+        if (listSize == 1048576) {
+          //testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
+          cudaDeviceSynchronize();
+          err = cudaGetLastError();
+          if (err != cudaSuccess) {
+            printf("LINE 267 ERROR: %s\n", cudaGetErrorString(err));
+          }
         }
         #endif
         ml<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
@@ -372,7 +384,7 @@ __global__ void ml(T* data, T* output, int* pivots, long size, int tasks, int P)
   if(warpsPerTask == 0) warpsPerTask=1;
   int myTask = warpIdx/warpsPerTask;
   long taskOffset = size*K*myTask;
-
+  __syncwarp();
   if(tid<K) {
     start[tid] = pivots[(warpIdx*K)+tid];
   }

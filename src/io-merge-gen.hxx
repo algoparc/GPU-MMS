@@ -297,7 +297,7 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
 
   int path[PL+1];
 
-
+  __syncwarp();
   buildHeap<T,f>(input, heap, start, end, size,tid);
   __syncwarp();
 

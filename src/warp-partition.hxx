@@ -279,9 +279,11 @@ __syncwarp();
       // Binary search each other list to find predecessor of partitioning value
     __syncwarp();
 
+    /*
     if (tid < K && tempPivots[tid] >= end) {
       tempPivots[tid] = end-1;
     }
+    */
 
     int step;
     if(tid < L) {
@@ -373,26 +375,36 @@ __global__ void fp(T* data, T*output, int* pivots, int size, int numLists, int t
   myTask = warpIdx / warpsPerTask; // If we have extra warps, just have them do no work...
   taskOffset = myTask*size*K;
   warpIdInTask = warpIdx - myTask*warpsPerTask;
+  __syncwarp();
   if(myTask < tasks-1) {
     // In this case, we don't have the edge case, so we reuse the same warp_partition function
     warp_partition<T>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask);
 
     
   } else if (myTask == tasks-1) { // It should technically always fall into the else case, but putting if() just in case
-    // TODO: Implement wp
+
     wp<T>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask, edgeCaseTaskSize);
 
-
-    //
   }
+  __syncwarp();
   if(tid < K) {
     pivots[warpIdx*K+tid] = myPivots[tid];
   }
+  __syncthreads();
   if(blockIdx.x==0 && threadIdx.x<K) {  // Fill last K spots with end values
     int difference = edgeCaseTaskSize - threadIdx.x * size;
     int end = (difference < size)*difference + (size <= difference)*size; // taking MIN of difference and size using predicates
     pivots[totalWarps*K+threadIdx.x] = end;
   }
+
+  /*
+  __syncthreads();
+  if (size == 1048576 && threadIdx.x == 0 && blockIdx.x == 0) {
+    for (int i=0; i<200; i++) {
+      printf("%d ", pivots[i]);
+    }
+  }
+  */
 }
 
 /* FOR DEBUGGING - MAKES SURE PIVOTS MAKE A VALID PARTITION */
