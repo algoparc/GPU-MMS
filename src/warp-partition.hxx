@@ -191,6 +191,17 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
   }
 }
 
+void __global__ printPartitions(int* pivots, int size) {
+  
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    for (int i=0; i<200; i++) {
+      printf("%d ", pivots[i]);
+    }
+  }
+  printf("\n\n\n");
+  
+}
+
 /* FOR DEBUGGING - MAKES SURE PIVOTS MAKE A VALID PARTITION */
 template<typename T>
 void __global__ testPartitioning(T* data, int* pivots, int size, int tasks, int P) {

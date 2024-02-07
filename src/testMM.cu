@@ -66,7 +66,7 @@ void test_multimergesort(int p, int N) {
   cudaMalloc(&d_output, N*sizeof(T));
   float total_time=0.0;
 
-srand(time(NULL));
+srand(0);
 for(int it=0; it<ITERS; it++) {
 
 // Create random list to be sorted
@@ -137,7 +137,7 @@ void test_squareSort(int N) {
   T* h_data = (T*)malloc(N*sizeof(T));
   T* d_data;
   cudaMalloc(&d_data, N*sizeof(T));
-  srand(time(NULL));
+  srand(0);
 
 for(int it=0; it < ITERS; it++) {
   create_random_list<T>(h_data, N, 0);

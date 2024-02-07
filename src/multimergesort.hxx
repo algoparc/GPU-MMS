@@ -105,6 +105,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
     else { // Each warp only does one task
       findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
+      printPartitions<<<1,1>>>(pivots, listSize);
 #ifdef DEBUG
   testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
 #endif
