@@ -29,8 +29,8 @@
 
 #define DEBUG 1 // Set shis to 1 to check that the output is correctly sorted
 #define PRINT 0 // Set this to 1 to print first M elements of the array for further debugging
-#define ITERS 2 // Number of iterations to compute average runtime
-#define BLOCKS 360
+#define ITERS 1 // Number of iterations to compute average runtime
+#define BLOCKS 300
 
 /* CPU FUNCTION HEADERS*/
 template <typename T>
@@ -156,7 +156,6 @@ void test_multimergesort(int p, int N)
     printf(", %d", h_data[i]);
   printf("]\n");
 #endif
-// drawBarGraph(h_data, N);
 #endif
 
   cudaFree(d_data);

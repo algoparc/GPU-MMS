@@ -220,8 +220,10 @@ __syncwarp();
         L = i;
       }
     }
+    __syncwarp();
 // Sequential section per warp 
     if(tid==0) {
+      
       
       partVal[warpInBlock]=MAXVAL;
       int tempPartitionVal;
@@ -284,6 +286,10 @@ __syncwarp();
       tempPivots[tid] = end-1;
     }
     */
+
+  if (size == 1048576) {
+    return;
+  }
 
     int step;
     if(tid < L) {
@@ -396,15 +402,18 @@ __global__ void fp(T* data, T*output, int* pivots, int size, int numLists, int t
     int end = (difference < size)*difference + (size <= difference)*size; // taking MIN of difference and size using predicates
     pivots[totalWarps*K+threadIdx.x] = end;
   }
+  
+}
 
-  /*
-  __syncthreads();
-  if (size == 1048576 && threadIdx.x == 0 && blockIdx.x == 0) {
+void __global__ printPartitions(int* pivots, int size) {
+  
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
     for (int i=0; i<200; i++) {
       printf("%d ", pivots[i]);
     }
   }
-  */
+  printf("\n");
+  
 }
 
 /* FOR DEBUGGING - MAKES SURE PIVOTS MAKE A VALID PARTITION */

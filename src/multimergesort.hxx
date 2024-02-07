@@ -141,6 +141,8 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   #endif
   int counter = 0;
   for(listSize=M; listSize < N; listSize *= K) {
+    testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
+    cudaDeviceSynchronize();
     #ifdef ERROR_LOGS
     printf("SORT FOR THIS LEVEL COMPLETED\n");
     testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
@@ -251,7 +253,10 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         #ifdef ERROR_LOGS
         printf("CASE 5\n");
         #endif
+        printf("tasks: %d\n", tasks);
         fp<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
+        cudaDeviceSynchronize();
+        printPartitions<<<1,1>>>(pivots, listSize);
         #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
@@ -503,7 +508,6 @@ __global__ void copy(T* arr1, T* arr2){
 // Launch with 1 thread and 1 block
 template <typename T, fptr_t f>
 __global__ void testSortedSegments(int* d_arr, int segmentSize, int N) {
-  #ifdef ERROR_LOGS
   for (int i = 0; i < N; i += segmentSize) {
     for (int j = 1; j < segmentSize; j++) {
       if (i+j >= N) {
@@ -516,7 +520,6 @@ __global__ void testSortedSegments(int* d_arr, int segmentSize, int N) {
     }
   }
   printf("SORTED WITH SEGMENT SIZES : %d\n", segmentSize);
-  #endif
 }
 
 /************************************************************
