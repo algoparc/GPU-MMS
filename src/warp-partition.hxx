@@ -171,6 +171,7 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
  volatile  __shared__ int endBoundary[K*WARPS];
 
   int end = 0;
+  __syncwarp();
   // Initialize boundary positions
   if(tid < K) {
 
@@ -200,7 +201,7 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
     tempPivots[tid] = 0;
   }
 
-__syncwarp();
+  __syncwarp();
 
 // find min and max elts of list
   if(warpIdInTask > 0) {
@@ -286,11 +287,6 @@ __syncwarp();
       tempPivots[tid] = end-1;
     }
     */
-
-  if (size == 1048576) {
-    return;
-  }
-
     int step;
     if(tid < L) {
       if(tid != partList[warpInBlock]) {

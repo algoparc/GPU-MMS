@@ -196,6 +196,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         printf("CASE 4\n");
         #endif
         fp<T><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P, edgeCaseTaskSize);
+        cudaDeviceSynchronize();
         #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
@@ -204,8 +205,8 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         }
         #endif
         ml<T,f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks, P);
-        #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
+        #ifdef ERROR_LOGS
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("LINE 209 ERROR: %s\n", cudaGetErrorString(err));
@@ -217,16 +218,16 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         printf("CASE 3\n");
         #endif
         findPartitions<T><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P);
-        #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
+        #ifdef ERROR_LOGS
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("%d %d %d LINE 222 ERROR: %s\n", listSize, edgeCaseTasks, P, cudaGetErrorString(err));
         }
         #endif
         multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks, P);
-        #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
+        #ifdef ERROR_LOGS
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("LINE 230 ERROR: %s\n", cudaGetErrorString(err));
@@ -257,25 +258,16 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         fp<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
         cudaDeviceSynchronize();
         printPartitions<<<1,1>>>(pivots, listSize);
-        #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
+        #ifdef ERROR_LOGS
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("LINE 257 ERROR: %s\n", cudaGetErrorString(err));
         }
-        cudaDeviceSynchronize();
-        if (listSize == 1048576) {
-          //testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
-          cudaDeviceSynchronize();
-          err = cudaGetLastError();
-          if (err != cudaSuccess) {
-            printf("LINE 267 ERROR: %s\n", cudaGetErrorString(err));
-          }
-        }
         #endif
         ml<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
-        #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
+        #ifdef ERROR_LOGS
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("LINE 265 ERROR: %s\n", cudaGetErrorString(err));
@@ -286,16 +278,16 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         printf("CASE 6\n");
         #endif
         findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
-        #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
+        #ifdef ERROR_LOGS
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("%d %d %d LINE 277 ERROR: %s\n", listSize, tasks, P, cudaGetErrorString(err));
         }
         #endif
         multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
-        #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
+        #ifdef ERROR_LOGS
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("LINE 285 ERROR: %s\n", cudaGetErrorString(err));
@@ -315,6 +307,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       printf("No errors at the end of this iteration of the FOR loop\n");
     }
     #endif
+    cudaDeviceSynchronize();
   }
 
   cudaFree(pivots);
