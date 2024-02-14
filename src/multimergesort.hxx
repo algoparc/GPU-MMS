@@ -147,28 +147,17 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     printf("SORT FOR THIS LEVEL COMPLETED\n");
     testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
     cudaDeviceSynchronize();
-    #ifdef ERROR_LOGS
     err = cudaGetLastError();
     if (err != cudaSuccess){
-      printf("LINE 148 CUDA Error: %s\n", cudaGetErrorString(err));
+      printf("LINE 152 CUDA Error: %s\n", cudaGetErrorString(err));
     }
-    #endif
     printf("-----------------------------------------------------\n");
     #endif
     tasks = N/listSize/K;
     counter++;
     if(tasks > WARPS) { // If each warp has to perform multiple merges
-      #ifdef ERROR_LOGS
-      printf("CASE 2\n");
-      #endif
       for(int i=0; i<tasks/WARPS; i++) {
-        findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P); // Why is WARPS*K = numLists? tasks = WARPS because each warp handles a single task
-        cudaDeviceSynchronize();
-
-#ifdef DEBUG // Check proper partitioning if debug mode
-  testPartitioning<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), pivots, listSize, tasks,WARPS);
-#endif
-
+        findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
 	// Merge based on partitions
         multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
       }
@@ -176,10 +165,8 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       cudaDeviceSynchronize();
       err = cudaGetLastError();
       if (err != cudaSuccess) {
-        printf("LINE 177 ERROR: %s\n", cudaGetErrorString(err));
-      } else {
-        printf("NO ISSUES, CASE 2 COMPLETED\n");
-      }
+        printf("LINE 168 ERROR: %s\n", cudaGetErrorString(err));
+      } 
       #endif
 
       int edgeCaseTasks = tasks%WARPS;
@@ -187,50 +174,38 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       
       int edgeCaseTaskSize = N%(K*listSize);
       edgeCaseTasks += edgeCaseTaskSize > listSize;
-      #ifdef ERROR_LOGS
-      printf("listSize: %d\n", listSize);
-      #endif
       
       if (edgeCaseTaskSize > listSize) {
-        #ifdef ERROR_LOGS
-        printf("CASE 4\n");
-        #endif
         fp<T><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P, edgeCaseTaskSize);
-        cudaDeviceSynchronize();
         #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
-          printf("LINE 201 ERROR: %s\n", cudaGetErrorString(err));
+          printf("LINE 184 ERROR: %s\n", cudaGetErrorString(err));
         }
         #endif
         ml<T,f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks, P);
-        cudaDeviceSynchronize();
         #ifdef ERROR_LOGS
         err = cudaGetLastError();
         if (err != cudaSuccess) {
-          printf("LINE 209 ERROR: %s\n", cudaGetErrorString(err));
+          printf("LINE 191 ERROR: %s\n", cudaGetErrorString(err));
         }
         #endif
       } else {
-        
-        #ifdef ERROR_LOGS
-        printf("CASE 3\n");
-        #endif
         findPartitions<T><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P);
-        cudaDeviceSynchronize();
         #ifdef ERROR_LOGS
+        cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
-          printf("%d %d %d LINE 222 ERROR: %s\n", listSize, edgeCaseTasks, P, cudaGetErrorString(err));
+          printf("%d %d %d LINE 200 ERROR: %s\n", listSize, edgeCaseTasks, P, cudaGetErrorString(err));
         }
         #endif
         multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks, P);
-        cudaDeviceSynchronize();
         #ifdef ERROR_LOGS
+        cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
-          printf("LINE 230 ERROR: %s\n", cudaGetErrorString(err));
+          printf("LINE 208 ERROR: %s\n", cudaGetErrorString(err));
         }
         #endif
         // Remember that tasks includes the edgeCaseTasks
@@ -266,7 +241,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         #ifdef ERROR_LOGS
         err = cudaGetLastError();
         if (err != cudaSuccess) {
-          printf("LINE 265 ERROR: %s\n", cudaGetErrorString(err));
+          printf("LINE 244 ERROR: %s\n", cudaGetErrorString(err));
         }
         #endif
       } else {
@@ -274,16 +249,16 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         printf("CASE 6\n");
         #endif
         findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
-        cudaDeviceSynchronize();
         #ifdef ERROR_LOGS
+        cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("%d %d %d LINE 277 ERROR: %s\n", listSize, tasks, P, cudaGetErrorString(err));
         }
         #endif
         multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
-        cudaDeviceSynchronize();
         #ifdef ERROR_LOGS
+        cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("LINE 285 ERROR: %s\n", cudaGetErrorString(err));
@@ -295,7 +270,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     }
     listBit = !listBit; // Switch input/output arrays
     #ifdef ERROR_LOGS
-    cudaDeviceSynchronize();
     err = cudaGetLastError();
     if (err != cudaSuccess){
       printf("LINE 297 CUDA Error: %s\n", cudaGetErrorString(err));
@@ -303,7 +277,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       printf("No errors at the end of this iteration of the FOR loop\n");
     }
     #endif
-    cudaDeviceSynchronize();
   }
 
   cudaFree(pivots);
