@@ -267,10 +267,8 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
           }
           candidates[warpInBlock*K + minIdx] = data[size*minIdx + tempPivots[minIdx]];
           if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx] && tempPivots[minIdx] < size-1) 
-//          {
             partVal[warpInBlock] = candidates[warpInBlock*K + minIdx];
-            partList[warpInBlock] = minIdx;
-//          }
+          partList[warpInBlock] = minIdx;
         } 
         else { // If we need to move max candidate
           partitionVal[warpInBlock] -= (tempPivots[maxIdx] - startBoundary[warpInBlock*K + maxIdx])/2; // Increase rank of current partition boundary
@@ -299,15 +297,15 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
         step = end/4;
 
         while(step >= 1) {
-          if(!cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock])) 
+          if(!cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock])) // if pivot value is greater than or equal to predecessor
             tempPivots[tid] -= step;
           else 
             tempPivots[tid] += step;
           step /=2;
         }
-        if(tempPivots[tid] > 0 && cmp(partVal[warpInBlock], (data[size*tid + tempPivots[tid]-1])))
+        while(tempPivots[tid] > 0 && cmp(partVal[warpInBlock], (data[size*tid + tempPivots[tid]-1])))
           tempPivots[tid]--;
-        if(cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock]))
+        while(cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock]))
           tempPivots[tid]++;
       }
     }
@@ -439,7 +437,11 @@ void __global__ testPartitioning(T* data, int* pivots, int size, int tasks, int 
               if(pivots[i*K + k] > 0 && pivotVal < data[size*k + pivots[i*K + k] -1]) {
                 printf("i,j,k equal %d %d %d\n", i,j,k);
                 errorLocation=size*k + pivots[i*K + k] - 1;
+                int p1 = size*j+pivots[i*K+j];
+                int p2 = size*k+pivots[i*K+k]-1;
                 printf("Partitioning failed, error location : %d\n", errorLocation);
+                printf("Neighborhood 1: %d %d %d\n", data[p1-1], data[p1], data[p1+1]);
+                printf("Neighborhood 2: %d %d %d\n", data[p2-1], data[p2], data[p2+1]);
                 return;
               }
             }

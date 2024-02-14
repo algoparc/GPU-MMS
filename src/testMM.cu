@@ -30,7 +30,7 @@
 #define DEBUG 1 // Set shis to 1 to check that the output is correctly sorted
 #define PRINT 0 // Set this to 1 to print first M elements of the array for further debugging
 #define ITERS 1 // Number of iterations to compute average runtime
-#define BLOCKS 300
+#define BLOCKS 128
 
 /* CPU FUNCTION HEADERS*/
 template <typename T>
@@ -101,10 +101,6 @@ void test_deterministic_mergelevels(int p, int N)
     // Copy list to GPU
     cudaMemcpy(d_data, h_data, N * sizeof(T), cudaMemcpyHostToDevice);
 
-    // Zero out result array
-    cudaMalloc(&d_output, (N+padding) * sizeof(T));
-    //  cudaMemset(&d_output, 0, N*sizeof(T));
-
     cudaDeviceSynchronize();
 
     // Run GPU-MMS.  T is datatype and cmp is comparison function (defined in cmp.hxx)
@@ -171,10 +167,6 @@ void test_multimergesort(int p, int N)
     
     // Copy list to GPU
     cudaMemcpy(d_data, h_data, N * sizeof(T), cudaMemcpyHostToDevice);
-
-    // Zero out result array
-    cudaMalloc(&d_output, (N+padding) * sizeof(T));
-    //  cudaMemset(&d_output, 0, N*sizeof(T));
 
     cudaDeviceSynchronize();
     // Timer functions

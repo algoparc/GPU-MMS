@@ -56,7 +56,7 @@ __global__ void print_count() {
   if(threadIdx.x==0 && blockIdx.x==0) printf("cmps:%d\n", tot_cmp);
 }
 
-#define ERROR_LOGS
+// #define ERROR_LOGS
 
 /* Main CPU function that sorts an input and writes the result to output 
    Parameters:
@@ -141,9 +141,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   #endif
   int counter = 0;
   for(listSize=M; listSize < N; listSize *= K) {
-    if (listSize == 1048576) {
-      printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
-    }
     // testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
     // cudaDeviceSynchronize();
     #ifdef ERROR_LOGS
@@ -241,9 +238,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
           copy<T><<<(N-tasks*K*listSize)/THREADS, THREADS>>>(list[listBit]+tasks*K*listSize, list[!listBit]+tasks*K*listSize);
         
       }
-      
-      
-      
     }
 
     else {
@@ -260,12 +254,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         printf("tasks: %d\n", tasks);
         fp<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
         cudaDeviceSynchronize();
-        if (listSize == 1048576) {
-          printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
-          cudaDeviceSynchronize();
-          testPartitioning<T><<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
-        }
-        cudaDeviceSynchronize();
+        // testPartitioning<T><<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
         #ifdef ERROR_LOGS
         err = cudaGetLastError();
         if (err != cudaSuccess) {
