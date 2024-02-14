@@ -36,6 +36,8 @@
 template <typename T>
 void test_multimergesort(int p, int N);
 template <typename T>
+void test_deterministic_mergelevels(int p, int N);
+template <typename T>
 void test_squareSort(int N);
 template <typename T>
 void CPUsort(T *arr, int N);
@@ -55,10 +57,83 @@ int main(int argc, char **argv)
 
   int N = atoi(argv[1]);
   test_multimergesort<DATATYPE>(BLOCKS, N);
+  // test_deterministic_mergelevels<DATATYPE>(BLOCKS, N);
   // test_squareSort<DATATYPE>(N);
 
   return 0;
 }
+
+template <typename T>
+void test_deterministic_mergelevels(int p, int N)
+{
+  cudaError_t err;
+  cudaEvent_t start, stop;
+  float time_elapsed = 0.0;
+  float minTime = 99999;
+  float maxTime = 0.0;
+
+  // Create sample sorted lists
+  
+  int padding = (N%M) ? M-N%M : 0;
+  T *h_data = (T *)malloc((N+padding) * sizeof(T));
+  T *h_output = (T *)malloc((N+padding) * sizeof(T));
+  for (int i = 0; i < padding; i++){
+    *(h_data + i) = MAXVAL - 1;
+  }
+
+  T *d_data;
+  T *d_output;
+  cudaMalloc(&d_data, (N+padding) * sizeof(T));
+  cudaMalloc(&d_output, (N+padding) * sizeof(T));
+
+  srand(0); // time(NULL)
+
+
+
+  // Create random list to be sorted
+  create_random_list<T>(h_data, N, 0);
+
+  for (int it = 0; it < 2; it++) {
+
+    // Create sorted initial list to test
+    // create_sorted_list<T>(h_data, N, 0);
+    
+    // Copy list to GPU
+    cudaMemcpy(d_data, h_data, N * sizeof(T), cudaMemcpyHostToDevice);
+
+    // Zero out result array
+    cudaMalloc(&d_output, (N+padding) * sizeof(T));
+    //  cudaMemset(&d_output, 0, N*sizeof(T));
+
+    cudaDeviceSynchronize();
+
+    // Run GPU-MMS.  T is datatype and cmp is comparison function (defined in cmp.hxx)
+    if (padding)
+      pad<T><<<1,padding>>>(d_data+N, MAXVAL - 1);
+    d_output = multimergesort<T, cmp>(d_data, d_output, h_data, p, N+padding);
+      
+    cudaDeviceSynchronize();
+
+    if (it < ITERS - 1)
+      cudaFree(&d_output);
+    
+    // copy sorted result back to CPU
+    if (it == 0)
+      cudaMemcpy(h_output, d_output, N * sizeof(T), cudaMemcpyDeviceToHost);
+  }
+
+  // copy sorted result back to CPU
+  cudaMemcpy(h_data, d_output, N * sizeof(T), cudaMemcpyDeviceToHost);
+
+  test_arrayEquality<T, host_cmp>(h_data, h_output, N);
+
+
+  cudaFree(d_data);
+  cudaFree(d_output);
+  free(h_data);
+  free(h_output);
+}
+
 
 // Create random data and sort it...
 template <typename T>
