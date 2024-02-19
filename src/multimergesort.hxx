@@ -56,7 +56,7 @@ __global__ void print_count() {
   if(threadIdx.x==0 && blockIdx.x==0) printf("cmps:%d\n", tot_cmp);
 }
 
-// #define ERROR_LOGS
+#define ERROR_LOGS
 
 /* Main CPU function that sorts an input and writes the result to output 
    Parameters:
@@ -143,6 +143,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   for(listSize=M; listSize < N; listSize *= K) {
     // testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
     // cudaDeviceSynchronize();
+
     #ifdef ERROR_LOGS
     printf("SORT FOR THIS LEVEL COMPLETED\n");
     testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
@@ -152,6 +153,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       printf("LINE 152 CUDA Error: %s\n", cudaGetErrorString(err));
     }
     printf("-----------------------------------------------------\n");
+    printf("listSize: %d\n", listSize);
     #endif
     tasks = N/listSize/K;
     counter++;
@@ -219,9 +221,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       // Each warp only does one task
       int edgeCaseTaskSize = N%(K*listSize);
       tasks += edgeCaseTaskSize > listSize;
-      #ifdef ERROR_LOGS
-      printf("listSize: %d\n", listSize);
-      #endif
       if (edgeCaseTaskSize > listSize) {
         #ifdef ERROR_LOGS
         printf("CASE 5\n");
@@ -317,7 +316,7 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
     __syncwarp();
 
     if(tid<K) 
-      end[tid] = pivots[(totalWarps*K)+tid]; // If tid<K, the right-hand side evaluates to size=listSize.
+      end[tid] = pivots[(warpsPerTask*tasks*K)+tid]; // If tid<K, the right-hand side evaluates to size=listSize.
     if(warpIdx % warpsPerTask < warpsPerTask-1 && tid < K) // Only executes in last kernel launch
       end[tid] = pivots[((warpIdx+1)*K)+tid];
 
@@ -358,13 +357,12 @@ __global__ void ml(T* data, T* output, int* pivots, long size, int tasks, int P)
   int outputOffset=0;
   __syncwarp();                            // Required to populate the start[] shared array first
   for(int i=0; i<K; i++)
-    outputOffset+=start[i]; 
-  __syncwarp();
+    outputOffset+=start[i];
 
-  if(myTask < tasks-1) {
+  if(myTask < tasks) {
 
     if(tid<K) 
-      end[tid] = size;
+      end[tid] = (myTask<tasks-1)*size + (myTask==tasks-1)*pivots[warpsPerTask*tasks*K+tid];
     if(warpIdx % warpsPerTask < warpsPerTask-1 && tid < K)
       end[tid] = pivots[((warpIdx+1)*K)+tid];
     __syncwarp();
@@ -376,13 +374,6 @@ __global__ void ml(T* data, T* output, int* pivots, long size, int tasks, int P)
 #else
     multimerge<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
 #endif
-  } else if (myTask == tasks-1) {
-    if (tid < K)
-      end[tid] = pivots[(totalWarps*K)+tid];
-    __syncwarp();
-      
-    multimergePipeline<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
-    
   }
 }
 

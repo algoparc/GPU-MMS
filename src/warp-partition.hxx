@@ -351,7 +351,7 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
         pivots[warpIdx*K+tid] = myPivots[tid];
       }
       if(blockIdx.x ==0 && threadIdx.x<K) {  // Fill last K spots with max val
-        pivots[totalWarps*K+threadIdx.x] = size;
+        pivots[warpsPerTask*tasks*K+threadIdx.x] = size;
       }
     }
   }
@@ -402,7 +402,7 @@ __global__ void fp(T* data, T*output, int* pivots, int size, int numLists, int t
     int difference = edgeCaseTaskSize - threadIdx.x * size;
     difference = (difference > 0) * difference;
     int end = (difference < size)*difference + (size <= difference)*size; // taking MIN of difference and size using predicates
-    pivots[totalWarps*K+threadIdx.x] = end;
+    pivots[warpsPerTask*tasks*K+threadIdx.x] = end;
   }
   
 }
