@@ -139,10 +139,12 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     printf("No errors after squaresort function call\n");
   }
   #endif
-  int counter = 0;
   for(listSize=M; listSize < N; listSize *= K) {
     // testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
     // cudaDeviceSynchronize();
+
+
+    tasks = N/listSize/K + ((N%(K*listSize))>listSize);
 
     #ifdef ERROR_LOGS
     printf("SORT FOR THIS LEVEL COMPLETED\n");
@@ -154,9 +156,9 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     }
     printf("-----------------------------------------------------\n");
     printf("listSize: %d\n", listSize);
+    printf("tasks: %d\n", tasks);
+    
     #endif
-    tasks = N/listSize/K;
-    counter++;
     if(tasks > WARPS) { // If each warp has to perform multiple merges
       for(int i=0; i<tasks/WARPS; i++) {
         findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
@@ -175,7 +177,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       int offset = (tasks/WARPS)*WARPS*K*listSize;
       
       int edgeCaseTaskSize = N%(K*listSize);
-      edgeCaseTasks += edgeCaseTaskSize > listSize;
       
       if (edgeCaseTaskSize > listSize) {
         fp<T><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P, edgeCaseTaskSize);
@@ -220,13 +221,11 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     else {
       // Each warp only does one task
       int edgeCaseTaskSize = N%(K*listSize);
-      tasks += edgeCaseTaskSize > listSize;
       if (edgeCaseTaskSize > listSize) {
         #ifdef ERROR_LOGS
         printf("CASE 5\n");
         printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
         #endif
-        printf("tasks: %d\n", tasks);
         fp<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
         cudaDeviceSynchronize();
         // testPartitioning<T><<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
