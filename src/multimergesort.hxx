@@ -15,6 +15,7 @@
  *
  */
 
+#define ERROR_LOGS
 
 #include<stdio.h>
 #include<iostream>
@@ -56,7 +57,6 @@ __global__ void print_count() {
   if(threadIdx.x==0 && blockIdx.x==0) printf("cmps:%d\n", tot_cmp);
 }
 
-#define ERROR_LOGS
 
 /* Main CPU function that sorts an input and writes the result to output 
    Parameters:
@@ -86,6 +86,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   // Optimization: remove this
   cudaMemset(pivots, 0, (WARPS+1)*K*sizeof(int));
   int tasks;
+  int edgeCaseTaskSize;
   T* list[2];
   list[0]=input;
   list[1]=output;
@@ -145,6 +146,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
 
     tasks = N/listSize/K + ((N%(K*listSize))>listSize);
+    edgeCaseTaskSize = N%(K*listSize);
 
     #ifdef ERROR_LOGS
     printf("SORT FOR THIS LEVEL COMPLETED\n");
@@ -176,7 +178,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       int edgeCaseTasks = tasks%WARPS;
       int offset = (tasks/WARPS)*WARPS*K*listSize;
       
-      int edgeCaseTaskSize = N%(K*listSize);
       
       if (edgeCaseTaskSize > listSize) {
         fp<T><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P, edgeCaseTaskSize);
@@ -195,7 +196,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         }
         #endif
       } else {
-        findPartitions<T><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P);
+        fp<T><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P, K*listSize);
         #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
@@ -220,13 +221,13 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
     else {
       // Each warp only does one task
-      int edgeCaseTaskSize = N%(K*listSize);
       if (edgeCaseTaskSize > listSize) {
         #ifdef ERROR_LOGS
         printf("CASE 5\n");
-        printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
         #endif
         fp<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
+        printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
+        testPartitioning<<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
         cudaDeviceSynchronize();
         // testPartitioning<T><<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
         #ifdef ERROR_LOGS

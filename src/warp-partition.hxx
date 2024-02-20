@@ -189,6 +189,12 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
     tempPivots[tid] = end/2;
   }
   __syncwarp();
+  /*
+  if (threadIdx.x == 0 && blockIdx.x == 123 && edgeCaseTaskSize == 2048) {
+    printf("start: %d %d %d %d\n", startBoundary[warpInBlock*K + tid], startBoundary[warpInBlock*K + tid + 1], startBoundary[warpInBlock*K + tid + 2], startBoundary[warpInBlock*K + tid + 3]);
+    printf("end: %d %d %d %d\n", endBoundary[warpInBlock*K + tid], endBoundary[warpInBlock*K + tid + 1], endBoundary[warpInBlock*K + tid + 2], endBoundary[warpInBlock*K + tid + 3]);
+  }
+  */
 
   if(tid==0) {
     int sum = 0;
@@ -227,6 +233,8 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
       }
     }
     __syncwarp();
+    if (threadIdx.x == 0 && blockIdx.x == 123 && edgeCaseTaskSize == 2048) 
+      printf("%d\n", L);
 // Sequential section per warp 
     if(tid==0) {
       
@@ -293,20 +301,23 @@ __device__ void wp(T* data, int* tempPivots, int size, int warpsPerTask, int war
     int step;
     if(tid < L) {
       if(tid != partList[warpInBlock]) {
-        tempPivots[tid] = end/2;            // end/2 as opposed to size/2
-        step = end/4;
+        int left = 0;
+        int right = end;
+        int mid = end/2;
 
-        while(step >= 1) {
-          if(!cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock])) // if pivot value is greater than or equal to predecessor
-            tempPivots[tid] -= step;
-          else 
-            tempPivots[tid] += step;
-          step /=2;
+        while (right - left > 1) {
+          if (left == right - 2) {
+              mid = left;
+          }
+          if (data[size*tid + mid] > partVal[warpInBlock]) {
+            right = mid + 1;
+            mid = (left+right)/2;
+          } else {
+            left = mid + 1;
+            mid = (left+right)/2;
+          }
         }
-        while(tempPivots[tid] > 0 && cmp(partVal[warpInBlock], (data[size*tid + tempPivots[tid]-1])))
-          tempPivots[tid]--;
-        while(cmp((data[size*tid + tempPivots[tid]]), partVal[warpInBlock]))
-          tempPivots[tid]++;
+        tempPivots[tid] = mid;
       }
     }
   }
@@ -380,8 +391,6 @@ __global__ void fp(T* data, T*output, int* pivots, int size, int numLists, int t
   myTask = warpIdx / warpsPerTask; // If we have extra warps, just have them do no work...
   taskOffset = myTask*size*K;
   warpIdInTask = warpIdx - myTask*warpsPerTask;
-  if (threadIdx.x == 0 && blockIdx.x == 0 && size == 1048576)
-    printf("VALS: %d %d %d\n", warpsPerTask, tasks, tasks*warpsPerTask);
   __syncwarp();
   if(myTask < tasks-1) {
     // In this case, we don't have the edge case, so we reuse the same warp_partition function
