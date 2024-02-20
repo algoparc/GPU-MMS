@@ -161,7 +161,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       for(int i=0; i<tasks/WARPS; i++) {
         findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
 	// Merge based on partitions
-        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
+        ml<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
       }
       #ifdef ERROR_LOGS
       cudaDeviceSynchronize();
@@ -202,7 +202,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
           printf("%d %d %d LINE 200 ERROR: %s\n", listSize, edgeCaseTasks, P, cudaGetErrorString(err));
         }
         #endif
-        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks, P);
+        ml<T,f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks, P);
         #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
@@ -224,6 +224,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       if (edgeCaseTaskSize > listSize) {
         #ifdef ERROR_LOGS
         printf("CASE 5\n");
+        printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
         #endif
         printf("tasks: %d\n", tasks);
         fp<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
@@ -313,7 +314,6 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
     if(tid<K) {
       start[tid] = pivots[(warpIdx*K)+tid];
     }
-    __syncwarp();
 
     if(tid<K) 
       end[tid] = pivots[(warpsPerTask*tasks*K)+tid]; // If tid<K, the right-hand side evaluates to size=listSize.
@@ -350,22 +350,24 @@ __global__ void ml(T* data, T* output, int* pivots, long size, int tasks, int P)
   if(warpsPerTask == 0) warpsPerTask=1;
   int myTask = warpIdx/warpsPerTask;
   long taskOffset = size*K*myTask;
-  __syncwarp();
-  if(tid<K) {
-    start[tid] = pivots[(warpIdx*K)+tid];
-  }
+
+  
   int outputOffset=0;
-  __syncwarp();                            // Required to populate the start[] shared array first
-  for(int i=0; i<K; i++)
-    outputOffset+=start[i];
 
   if(myTask < tasks) {
+
+    if(tid<K) {
+      start[tid] = pivots[(warpIdx*K)+tid];
+    }
 
     if(tid<K) 
       end[tid] = (myTask<tasks-1)*size + (myTask==tasks-1)*pivots[warpsPerTask*tasks*K+tid];
     if(warpIdx % warpsPerTask < warpsPerTask-1 && tid < K)
       end[tid] = pivots[((warpIdx+1)*K)+tid];
     __syncwarp();
+
+    for(int i=0; i<K; i++)
+      outputOffset+=start[i];
 
     
 
