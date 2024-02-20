@@ -135,7 +135,6 @@ void test_deterministic_mergelevels(int p, int N)
 template <typename T>
 void test_multimergesort(int p, int N)
 {
-  cudaError_t err;
   cudaEvent_t start, stop;
   float time_elapsed = 0.0;
   float minTime = 99999;
