@@ -163,7 +163,8 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     #endif
     if(tasks > WARPS) { // If each warp has its own designated task all to itself
       for(int i=0; i<tasks/WARPS; i++) {
-        findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P, K*listSize);
+        // Shouldn't this fail if you have 127 normal tasks and 1 edge case task?
+        findPartitions<T, f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P, K*listSize);
 	// Merge based on partitions
         ml<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
       }
@@ -180,7 +181,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       
       
       if (edgeCaseTaskSize > listSize) {
-        findPartitions<T><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P, edgeCaseTaskSize);
+        findPartitions<T, f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P, edgeCaseTaskSize);
         #ifdef ERROR_LOGS
         printPartitions<<<1,1>>>(pivots, listSize, edgeCaseTasks, P);
         testPartitioning<<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
@@ -200,7 +201,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         }
         #endif
       } else {
-        findPartitions<T><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P, K*listSize);
+        findPartitions<T, f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P, K*listSize);
         #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
@@ -226,7 +227,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     else {
       // Each warp only does one task
       if (edgeCaseTaskSize > listSize) {
-        findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
+        findPartitions<T, f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
         #ifdef ERROR_LOGS
         printf("CASE 5\n");
         printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
@@ -252,7 +253,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         #ifdef ERROR_LOGS
         printf("CASE 6\n");
         #endif
-        findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, K*listSize);
+        findPartitions<T, f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, K*listSize);
         #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();

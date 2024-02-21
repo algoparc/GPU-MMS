@@ -25,7 +25,29 @@
 #include<algorithm>
 #include "params.h"
 
-template<typename T>
+
+
+template<typename T, fptr_t f>
+__device__ void equals(T a, T b) {
+  return !(f(a, b) ^ f(b, a));
+}
+
+/*
+Code to evenly partition a single task into multiple parts, each to be handled by a single warp.
+
+Parameters:
+T*              data -- The data to be sorted. The precondition is that every segment of length 'size' (defined as the third parameter) should be sorted.
+int*      tempPivots -- The location to store the output. The output for each warp will simply be K different integers, each defining the starting location for that warp's merge.
+int             size -- Length of each (sorted) subarray to be merged into one array of size K*size.
+int     warpIdInTask -- Index of the warp, relative to the task rather than the block. For all warps with warpIdInTask = 0, the expected output will just be [0, 0, 0 ..., 0] (K 0's).
+int edgeCaseTaskSize -- The size of the edge case. In the event that you do not have K filled subarrays, this specifies how large the task size is. For non-edge cases, this variable is just K*size.
+
+Additional Notes:
+int L -- In the event of an edge case where you do not have K filled subarrays, you run L-way mergesort. If it is not an edge case, L=K, so simply K-way mergesort.
+
+*/
+
+template<typename T, fptr_t f>
 __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerTask, int warpIdInTask, int edgeCaseTaskSize) {
   const int WARPS = THREADS/W;
   int tid = threadIdx.x%W;
@@ -33,6 +55,7 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
   int targetPivot = ((warpIdInTask)*(edgeCaseTaskSize/warpsPerTask));
   T minVal,maxVal;
   int minIdx, maxIdx;
+  int L = (edgeCaseTaskSize + size - 1) / size;
 
   __shared__ T candidates[K*WARPS];
   __shared__ int partitionVal[WARPS];
@@ -54,12 +77,6 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
     tempPivots[tid] = end/2;
   }
   __syncwarp();
-  /*
-  if (threadIdx.x == 0 && blockIdx.x == 123 && edgeCaseTaskSize == 2048) {
-    printf("start: %d %d %d %d\n", startBoundary[warpInBlock*K + tid], startBoundary[warpInBlock*K + tid + 1], startBoundary[warpInBlock*K + tid + 2], startBoundary[warpInBlock*K + tid + 3]);
-    printf("end: %d %d %d %d\n", endBoundary[warpInBlock*K + tid], endBoundary[warpInBlock*K + tid + 1], endBoundary[warpInBlock*K + tid + 2], endBoundary[warpInBlock*K + tid + 3]);
-  }
-  */
 
   if(tid==0) {
     int sum = 0;
@@ -90,16 +107,6 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
     __shared__ T partVal[THREADS/W];
     __shared__ int partList[THREADS/W];
     __syncwarp();
-    
-    int L = 0;   // L represents L-way mergesort instead of K-way
-    for (int i = 1; i <= K; i++) {
-      if (tempPivots[i-1] > 0) {
-        L = i;
-      }
-    }
-    __syncwarp();
-    if (threadIdx.x == 0 && blockIdx.x == 123 && edgeCaseTaskSize == 2048) 
-      printf("%d\n", L);
 // Sequential section per warp 
     if(tid==0) {
       
@@ -116,11 +123,11 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
           
         for(int i=0; i<L; i++) {
           iterIdx = warpInBlock*K + i;
-          if(cmp(candidates[iterIdx], minVal) && tempPivots[i] < size-1) {
+          if(f(candidates[iterIdx], minVal) && tempPivots[i] < size-1) {
             minVal = candidates[iterIdx];
             minIdx = i;
           }
-          if(cmp(maxVal, candidates[iterIdx]) && tempPivots[i] > 0) {
+          if(f(maxVal, candidates[iterIdx]) && tempPivots[i] > 0) {
             maxVal = candidates[iterIdx];
             maxIdx = i;
           }
@@ -173,7 +180,7 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
           if (left == right - 2) {
               mid = left;
           }
-          if (data[size*tid + mid] > partVal[warpInBlock]) {
+          if (f(partVal[warpInBlock], data[size*tid + mid])) {
             right = mid + 1;
             mid = (left+right)/2;
           } else {
@@ -188,7 +195,7 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
 }
 
 // If there is an edge case
-template<typename T>
+template<typename T, fptr_t f>
 __global__ void findPartitions(T* data, T*output, int* pivots, int size, int numLists, int tasks, int P, int edgeCaseTaskSize) {
   __shared__ int myPivotsRaw[K*(THREADS/W)];
   int warpInBlock = threadIdx.x/W;
@@ -212,12 +219,12 @@ __global__ void findPartitions(T* data, T*output, int* pivots, int size, int num
   __syncwarp();
   if(myTask < tasks-1) {
     // In this case, we don't have the edge case, so we reuse the same warp_partition function
-    warp_partition<T>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask, K*size);
+    warp_partition<T, f>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask, K*size);
 
     
   } else if (myTask == tasks-1) { // It should technically always fall into the else case, but putting if() just in case
 
-    warp_partition<T>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask, edgeCaseTaskSize);
+    warp_partition<T, f>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask, edgeCaseTaskSize);
 
   }
   __syncwarp();
