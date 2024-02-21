@@ -136,26 +136,26 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
         tempPartitionVal = partitionVal[warpInBlock];
         
 
-          // If we need to move min candidate
+          // Check if the target pivot is greater than the current sum of pivot indices. If it is, move the minimum of the pivot indices
         if(targetPivot >= tempPartitionVal) {
           partitionVal[warpInBlock] += (endBoundary[warpInBlock*K + minIdx] - tempPivots[minIdx])/2; // Increase rank of current partition boundary
           startBoundary[warpInBlock*K + minIdx] = tempPivots[minIdx];
           tempPivots[minIdx]=(endBoundary[warpInBlock*K+minIdx]+startBoundary[warpInBlock*K+minIdx])/2;
-          if(tempPivots[minIdx] == startBoundary[warpInBlock*K + minIdx]) { // Edge case
+          if(tempPivots[minIdx] == startBoundary[warpInBlock*K + minIdx]) { // Edge case, when start=pivot=end-1
             tempPivots[minIdx]++; 
             partitionVal[warpInBlock]++;
           }
           candidates[warpInBlock*K + minIdx] = data[size*minIdx + tempPivots[minIdx]];
-          if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx] && tempPivots[minIdx] < size-1) 
+          if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx] && tempPivots[minIdx] < size-1)  // If start >= end, we are done finding the partition value
             partVal[warpInBlock] = candidates[warpInBlock*K + minIdx];
           partList[warpInBlock] = minIdx;
         } 
-        else { // If we need to move max candidate
+        else { // Check if the target 
           partitionVal[warpInBlock] -= (tempPivots[maxIdx] - startBoundary[warpInBlock*K + maxIdx])/2; // Increase rank of current partition boundary
           endBoundary[warpInBlock*K + maxIdx] = tempPivots[maxIdx];
           tempPivots[maxIdx]=(endBoundary[warpInBlock*K+maxIdx]+startBoundary[warpInBlock*K+maxIdx])/2;
           candidates[warpInBlock*K + maxIdx] = data[size*maxIdx + tempPivots[maxIdx]];
-          if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0) 
+          if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0)  // If start >= end, we are done finding the partition value
             partVal[warpInBlock] = candidates[warpInBlock*K + maxIdx];
           partList[warpInBlock] = maxIdx;
         }
