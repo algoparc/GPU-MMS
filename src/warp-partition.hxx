@@ -194,6 +194,20 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
   }
 }
 
+/*
+  Finds the pivots for all warps. Invokes warp-partition to properly binary search every pivot.
+  Note that this is not optimized code. This method currently involves binary searching every pivot, regardless of whether or not the warp has the task all to itself.
+
+  Parameters:
+  T* data     -- The input data to find partitions for. Note that the data is expected to be filled with contiguous segments of length 'size' (defined by third parameter) that are all sorted. 
+  T* output   -- The output, where we will store the result of the following merge. We don't actually need this parameter.
+  int size    -- The size of each currently sorted subarray
+  int tasks   -- The number of tasks we have. Each task is defined as a single merge of K different sorted subarrays of length 'size' into a single subarray of length K*size
+  int P       -- The number of blocks we have, equivalent to gridDim.x
+  int edgeCaseTaskSize -- The size of the edge case, if there is any. In the event of a non-completely filled task of total length K*size, this will have a value between size < edgeCaseTaskSize < K*size. Otherwise, this will just be = K*size.
+
+*/
+
 // If there is an edge case
 template<typename T, fptr_t f>
 __global__ void findPartitions(T* data, T*output, int* pivots, int size, int numLists, int tasks, int P, int edgeCaseTaskSize) {

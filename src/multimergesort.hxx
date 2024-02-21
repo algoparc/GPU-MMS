@@ -33,7 +33,7 @@
 template<typename T, fptr_t f>
 __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks, int P);
 template<typename T, fptr_t f>
-__global__ void ml(T* data, T* output, int* pivots, long size, int tasks, int P);
+__global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks, int P);
 template<typename T, fptr_t f>
 __global__ void multimergeLevelEdgeCase(T* data, T* output, int* pivots, long size, int tasks, int P, int N);
 template<typename T, fptr_t f>
@@ -161,12 +161,13 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     printf("tasks: %d\n", tasks);
     
     #endif
+
     if(tasks > WARPS) { // If each warp has its own designated task all to itself
       for(int i=0; i<tasks/WARPS; i++) {
         // Shouldn't this fail if you have 127 normal tasks and 1 edge case task?
         findPartitions<T, f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P, K*listSize);
 	// Merge based on partitions
-        ml<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
+        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
       }
       #ifdef ERROR_LOGS
       cudaDeviceSynchronize();
@@ -193,7 +194,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
           printf("LINE 184 ERROR: %s\n", cudaGetErrorString(err));
         }
         #endif
-        ml<T,f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks, P);
+        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks, P);
         #ifdef ERROR_LOGS
         err = cudaGetLastError();
         if (err != cudaSuccess) {
@@ -209,7 +210,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
           printf("%d %d %d LINE 200 ERROR: %s\n", listSize, edgeCaseTasks, P, cudaGetErrorString(err));
         }
         #endif
-        ml<T,f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks, P);
+        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks, P);
         #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
@@ -227,7 +228,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     else {
       // Each warp only does one task
       if (edgeCaseTaskSize > listSize) {
-        findPartitions<T, f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
+        findPartitions<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
         #ifdef ERROR_LOGS
         printf("CASE 5\n");
         printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
@@ -241,7 +242,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
           printf("LINE 257 ERROR: %s\n", cudaGetErrorString(err));
         }
         #endif
-        ml<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
+        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
         cudaDeviceSynchronize();
         #ifdef ERROR_LOGS
         err = cudaGetLastError();
@@ -261,7 +262,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
           printf("%d %d %d LINE 277 ERROR: %s\n", listSize, tasks, P, cudaGetErrorString(err));
         }
         #endif
-        ml<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
+        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
         #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
@@ -289,9 +290,20 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   return list[listBit]; // This returns the array that was last used as output
 }
 
+/*
+    Performs one level of merge, assuming that the pivots have already been determined.
+    Parameters:
+
+    T* data     -- The input to merge. The data should already pass in any offsets, so the merge will begin at index 0 relative to the data pointer.
+    T* output   -- The location to store the output.
+    int* pivots -- Where the pivots are stored. There should be K pivots for every active warp, with one additional set of pivots, so the length of relevant pivot array should be K*(activeWarps + 1)
+    long size   -- The size of each sorted subarray to be merged. We will merge these sorted subarrays into sizes of K*size
+    int tasks   -- The number of tasks. Each task is defined as a single merge of four subarray sections
+    int P       -- The number of blocks (equivalent to gridDim.x)
+*/
 
 template<typename T, fptr_t f>
-__global__ void ml(T* data, T* output, int* pivots, long size, int tasks, int P) {
+__global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks, int P) {
   int totalWarps = P*(THREADS/W);
   int warpInBlock = threadIdx.x/W;
   int warpIdx = (blockIdx.x)*(THREADS/W)+warpInBlock;
