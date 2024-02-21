@@ -22,7 +22,7 @@
 # NOTE: Change the compute capability in the nvcc commands below based on the GPU you are using.
 
 cd ../src
-for n in {1..100}
+for n in {1..1000}
 do
     ./testMM $((2 ** 20 + 9000))
 done

@@ -24,8 +24,6 @@
 cd ../src
 for n in 2097152 4194304 8388608 16777216 33554432 67108864 134217728
 do
-    nvcc -std=c++11 -O3  -lineinfo -DN=${n} -use_fast_math --maxrregcount=60 --expt-extended-lambda -Xptxas -dlcm=cg -lcudart -D_FORCE_INLINES -gencode arch=compute_30,code=sm_30 -c testMM.cu
-nvcc testMM.o -std=c++11 -O3  -lineinfo -use_fast_math --maxrregcount=60 --expt-extended-lambda -Xptxas -dlcm=cg -lcudart -D_FORCE_INLINES -gencode arch=compute_30,code=sm_30 -o testMM
-    ./testMM 
+    ./testMM $n
   echo ""
 done
