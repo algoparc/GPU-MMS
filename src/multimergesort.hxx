@@ -15,7 +15,7 @@
  *
  */
 
-// #define ERROR_LOGS
+#define ERROR_LOGS
 
 #include<stdio.h>
 #include<iostream>
@@ -139,16 +139,17 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   } else {
     printf("No errors after squaresort function call\n");
   }
+  testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
+  cudaDeviceSynchronize();
   #endif
   for(listSize=M; listSize < N; listSize *= K) {
-    // testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
-    // cudaDeviceSynchronize();
 
 
     tasks = N/listSize/K + ((N%(K*listSize))>listSize);
     edgeCaseTaskSize = N%(K*listSize);
 
     #ifdef ERROR_LOGS
+    printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
     printf("SORT FOR THIS LEVEL COMPLETED\n");
     testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
     cudaDeviceSynchronize();
