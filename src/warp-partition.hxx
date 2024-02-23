@@ -50,8 +50,12 @@ int L -- In the event of an edge case where you do not have K filled subarrays, 
 template<typename T, fptr_t f>
 __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerTask, int warpIdInTask, int edgeCaseTaskSize) {
   int tid = threadIdx.x%W;
-  int target = warpIdInTask * (K*warpsPerTask*size);
-  if (tid == 0) {
+  int target = warpIdInTask * (edgeCaseTaskSize / warpsPerTask);
+  if (warpIdInTask == 0) {
+    if (tid < K) {
+      tempPivots[tid] = 0;
+    }
+  } else if (tid == 0) {
     int left[K];
     int right[K];
     int mid[K];
@@ -59,9 +63,10 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
     int totalCompleted=0;
     int totalSum=0;
     int L = (edgeCaseTaskSize+size-1)/size;
+    edgeCaseTaskSize--;
     for (int i=0; i<L; i++) {
       left[i] = 0;
-      right[i] = (edgeCaseTaskSize < size) * edgeCaseTaskSize + (size <= edgeCaseTaskSize) * size;
+      right[i] = (edgeCaseTaskSize < size-1) * edgeCaseTaskSize + (size-1 <= edgeCaseTaskSize) * (size-1);
       mid[i] = (left[i]+right[i])/2;
       totalSum += mid[i];
       edgeCaseTaskSize -= size;
@@ -79,7 +84,8 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
           }
           right[maxIdx] = mid[maxIdx];
           mid[maxIdx] = (left[maxIdx]+right[maxIdx])/2;
-          if (left[maxIdx] + 1 == right[maxIdx]) {
+          totalSum += mid[maxIdx] - right[maxIdx];
+          if (left[maxIdx] + 1 >= right[maxIdx]) {
             totalCompleted++;
             completed[maxIdx] = 1;
           }
@@ -95,16 +101,33 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
           }
           left[minIdx] = mid[minIdx];
           mid[minIdx] = (left[minIdx]+right[minIdx])/2;
-          if (left[minIdx] + 1 == right[minIdx]) {
+          totalSum += mid[minIdx] - left[minIdx];
+          if (left[minIdx] + 1 >= right[minIdx]) {
             totalCompleted++;
             completed[minIdx] = 1;
           }
         }
       }
     }
+
+
+    T minimumOfRightBoundaries = data[right[0]];
+    int minRightIdx = 0;
+    
+    for (int i=1; i<L; i++) {
+      if (f(minimumOfRightBoundaries, data[size*i + right[i]])) {
+        minimumOfRightBoundaries = data[size*i + right[i]];
+        minRightIdx = i;
+      }
+    }
+    
     for (int i=0; i<K; i++) {
       if (i<L) {
-        tempPivots[i] = mid[i];
+        if (i == minRightIdx) {
+          tempPivots[i] = right[i];
+        } else {
+          tempPivots[i] = mid[i];
+        }
       } else {
         tempPivots[i] = 0;
       }
