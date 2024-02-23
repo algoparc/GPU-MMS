@@ -15,7 +15,7 @@
  *
  */
 
-// #define ERROR_LOGS
+#define ERROR_LOGS
 
 #include<stdio.h>
 #include<iostream>
@@ -101,6 +101,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   #endif
 // Sort the base case into blocks of 1024 elements each
   squareSort<T,f><<<baseBlocks,THREADS>>>(input, N);
+  cudaDeviceSynchronize();
 
 // Check that basecase properly sorted if in DEBUG mode
 #ifdef DEBUG
@@ -116,7 +117,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
   for(int i=0; i<N/M; i++) {
     for(int j=1; j<M; j++) {
-      if(host_cmp(h_data[i*M+(j)], h_data[i*M+(j-1)])) {
+      if(!host_cmp(h_data[i*M+(j-1)], h_data[i*M+(j)])) {
         correct=false;
       }
     }
@@ -141,8 +142,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   }
   #endif
   for(listSize=M; listSize < N; listSize *= K) {
-    // testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
-    // cudaDeviceSynchronize();
 
 
     tasks = N/listSize/K + ((N%(K*listSize))>listSize);
@@ -150,7 +149,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
     #ifdef ERROR_LOGS
     printf("SORT FOR THIS LEVEL COMPLETED\n");
-    testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
+    testSortedSegments<T, f><<<1,1>>>(list[listBit], listSize, N);
     cudaDeviceSynchronize();
     err = cudaGetLastError();
     if (err != cudaSuccess){
@@ -359,7 +358,7 @@ __global__ void testSortedSegments(int* d_arr, int segmentSize, int N) {
       if (i+j >= N) {
         break;
       }
-      if (f(d_arr[i+j], d_arr[i+j-1])) {
+      if (!f(d_arr[i+j-1], d_arr[i+j])) {
         printf("UNSORTED AT INDEX %d AND %d\n", i+j-1, i+j);
         return;
       }
