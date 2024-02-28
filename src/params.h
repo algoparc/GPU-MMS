@@ -21,8 +21,9 @@
 #define PIPELINE 1 // Set to 1 to enable pipelining heap merging
 
 #define M 1024 // Size of base case (keep at 1024)
-#define THREADS 32 // Threads per block
+#define THREADS_BASE_CASE 32
 #define W 32
+#define THREADS W*(PL+1) // Threads per block
 #define LOGW 5
 #define B 32
 #define LOGB 5

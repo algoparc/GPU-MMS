@@ -66,9 +66,9 @@ __global__ void squareSort(T* data, int N) {
 
   int blockOffset = M * blockIdx.x;
 
-  for(int sec = 0; sec < (N/gridDim.x); sec += M*(THREADS/W)) { // iterates until you hit the upper bound of N/gridDim.x which is the number of elements processed per block 
+  for(int sec = 0; sec < (N/gridDim.x); sec += M*(THREADS_BASE_CASE/W)) { // iterates until you hit the upper bound of N/gridDim.x which is the number of elements processed per block 
     for(int i=0; i<ELTS; i++) {
-      regs[i] = data[blockOffset + sec + (i*THREADS) + threadIdx.x];
+      regs[i] = data[blockOffset + sec + (i*THREADS_BASE_CASE) + threadIdx.x];
     }
     
     int tid = threadIdx.x%W;
@@ -103,7 +103,7 @@ __global__ void squareSort(T* data, int N) {
       data[blockOffset + sec + warpOffset + W*i + tid] = sData[tid*W + (tid+i)%W];
     }
 
-    for(int i=(THREADS/W)-1; i>warpId; i--) // Wait for other warps to catch back up
+    for(int i=(THREADS_BASE_CASE/W)-1; i>warpId; i--) // Wait for other warps to catch back up
       __syncthreads();
   }
 }

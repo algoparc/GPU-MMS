@@ -91,7 +91,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   list[0]=input;
   list[1]=output;
   bool listBit = false;
-  int baseBlocks=((N/M)/(THREADS/W));
+  int baseBlocks=((N/M)/(THREADS_BASE_CASE/W));
 
   // FOR DEBUGGING, YOU CAN DELETE
   T* values = (T*) malloc(N * sizeof(T));
@@ -100,7 +100,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   printf("CASE 1\n");
   #endif
 // Sort the base case into blocks of 1024 elements each
-  squareSort<T,f><<<baseBlocks,THREADS>>>(input, N);
+  squareSort<T,f><<<baseBlocks,THREADS_BASE_CASE>>>(input, N);
   cudaDeviceSynchronize();
 
 // Check that basecase properly sorted if in DEBUG mode

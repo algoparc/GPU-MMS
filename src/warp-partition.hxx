@@ -212,45 +212,41 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
 template<typename T, fptr_t f>
 __global__ void findPartitions(T* data, T*output, int* pivots, int size, int numLists, int tasks, int P, int edgeCaseTaskSize) {
   __shared__ int myPivotsRaw[K*(THREADS/W)];
-  int warpInBlock = threadIdx.x/W;
   int* myPivots = myPivotsRaw+(warpInBlock*K);
-  int warpIdx = (blockIdx.x)*(THREADS/W) + warpInBlock;
   int tid = threadIdx.x%W;
-  int warpsPerTask;
   int myTask;
   int taskOffset;
   int warpIdInTask;
-  int totalWarps = P*(THREADS/W);
+  int blocksPerTask;
 
   /*
     In the general case, warpsPerTask = totalWarps / WARPS = (P * THREADS / W) / (P * THREADS/W) = 1
     Edge case: warpsPerTask = totalWarps / ... = (P * THREADS / W) / ... >= 1
   */
-  warpsPerTask = totalWarps/tasks;
-  myTask = warpIdx / warpsPerTask; // If we have extra warps, just have them do no work...
+  blocksPerTask = gridDim.x/tasks;
+  myTask = blockIdx.x / blocksPerTask; // If we have extra warps, just have them do no work...
   taskOffset = myTask*size*K;
-  warpIdInTask = warpIdx - myTask*warpsPerTask;
+  blockIdInTask = blockIdx.x - myTask*blocksPerTask;
   __syncwarp();
   if(myTask < tasks-1) {
     // In this case, we don't have the edge case, so we reuse the same warp_partition function
-    warp_partition<T, f>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask, K*size);
+    warp_partition<T, f>(data+taskOffset, myPivots, size, blocksPerTask, warpIdInTask, K*size);
 
     
   } else if (myTask == tasks-1) { // It should technically always fall into the else case, but putting if() just in case
 
-    warp_partition<T, f>(data+taskOffset, myPivots, size, warpsPerTask, warpIdInTask, edgeCaseTaskSize);
+    warp_partition<T, f>(data+taskOffset, myPivots, size, blocksPerTask, warpIdInTask, edgeCaseTaskSize);
 
   }
   __syncwarp();
-  if(tid < K) {
-    pivots[warpIdx*K+tid] = myPivots[tid];
+  if(threadIdx.x < K) {
+    pivots[blockIdx.x*K+tid] = myPivots[tid];
   }
-  __syncthreads();
   if(blockIdx.x==0 && threadIdx.x<K) {  // Fill last K spots with end values
     int difference = edgeCaseTaskSize - threadIdx.x * size;
     difference = (difference > 0) * difference;
     int end = (difference < size)*difference + (size <= difference)*size; // taking MIN of difference and size using predicates
-    pivots[warpsPerTask*tasks*K+threadIdx.x] = end;
+    pivots[blocksPerTask*tasks*K+threadIdx.x] = end;
   }
   
 }
