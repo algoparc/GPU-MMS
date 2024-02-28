@@ -25,7 +25,7 @@
 
 /* CPU Functions to create testData */
 template<typename T>
-void create_sorted_list(T* data, int size, int addVal) {
+void create_sorted_list(T* data, int size) {
   for(int i=0; i<size; i++) {
     data[i] = i;
   }
@@ -40,16 +40,6 @@ void randomize(T* data, int size) {
     data[j] = temp;
   }
 }
-/*
-template<typename T>
-void create_random_sorted_list(T* data, int size) {
-//  srand(time(NULL));
-  for(int i=0; i<size; i++) {
-    data[i] = {.key = rand()%RANGE, .val= rand()%RANGE};
-  }
-  std::sort(data, data+size);
-}
-*/
 
 template<typename T>
 void create_random_list(T* data, int size, int min) {

@@ -15,8 +15,6 @@
  *
  */
 
-#define ERROR_LOGS
-
 #include<stdio.h>
 #include<iostream>
 #include<fstream>
@@ -71,7 +69,7 @@ __global__ void print_count() {
 */
 template<typename T, fptr_t f>
 T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
-  #ifdef ERROR_LOGS
+  #ifdef DEBUG
   cudaError_t err;
   err = cudaGetLastError();
   if (err != cudaSuccess){
@@ -96,34 +94,11 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   // FOR DEBUGGING, YOU CAN DELETE
   T* values = (T*) malloc(N * sizeof(T));
 
-  #ifdef ERROR_LOGS
+  #ifdef DEBUG
   printf("CASE 1\n");
   #endif
 // Sort the base case into blocks of 1024 elements each
   squareSort<T,f><<<baseBlocks,THREADS>>>(input, N);
-
-// Check that basecase properly sorted if in DEBUG mode
-#ifdef DEBUG
-  cudaDeviceSynchronize();
-  cudaMemcpy(h_data, input, N*sizeof(T), cudaMemcpyDeviceToHost);
-  bool correct=true;
-  #if PRINT == 1
-    printf("[%d", h_data[0]);
-    for (int i = 1; i < M; i++)
-      printf(", %d", h_data[i]);
-    printf("]\n");
-  #endif
-
-  for(int i=0; i<N/M; i++) {
-    for(int j=1; j<M; j++) {
-      if(host_cmp(h_data[i*M+(j)], h_data[i*M+(j-1)])) {
-        correct=false;
-      }
-    }
-  }
-  if(!correct) printf("base case not sorted!\n");
-  else printf("base case was sorted!\n");
-#endif
 
 /*
   Perform successive merge rounds.
@@ -132,16 +107,15 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   1024 elements.
 */
   int listSize = M;
-  #ifdef ERROR_LOGS
+  #ifdef DEBUG
   err = cudaGetLastError();
   if (err != cudaSuccess){
     printf("LINE 135 CUDA Error: %s\n", cudaGetErrorString(err));
   } else {
     printf("No errors after squaresort function call\n");
   }
-  testSortedSegments<T, cmp><<<1,1>>>(list[listBit], M, N);
+  testSortedSegments<T, f><<<1,1>>>(list[listBit], M, N);
   cudaDeviceSynchronize();
-  return list[listBit];
   #endif
   for(listSize=M; listSize < N; listSize *= K) {
 
@@ -149,9 +123,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     tasks = N/listSize/K + ((N%(K*listSize))>listSize);
     edgeCaseTaskSize = N%(K*listSize);
 
-    #ifdef ERROR_LOGS
-    printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
-    cudaDeviceSynchronize();
+    #ifdef DEBUG
     printf("SORT FOR THIS LEVEL COMPLETED\n");
     testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
     cudaDeviceSynchronize();
@@ -167,12 +139,18 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
     if(tasks > WARPS) { // If each warp has its own designated task all to itself
       for(int i=0; i<tasks/WARPS; i++) {
-        // Shouldn't this fail if you have 127 normal tasks and 1 edge case task?
-        findPartitions<T, f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P, K*listSize);
+	int eltsLeftToProcess = N-i*tasks*K*listSize;
+	int eltsToProcessInNextKernel = (eltsLeftToProcess > tasks*K*listSize) ? tasks*K*listSize : eltsLeftToProcess;
+	int edgeSize = eltsToProcessInNextKernel % (K*listSize);
+	if (edgeSize == 0) {
+	  edgeSize = K*listSize;
+	}
+        defaultPartitions<<<P,THREADS>>>(pivots, P, listSize, K*listSize); // edge case is not K*size if 127 normal tasks and 1 edge task
+
 	// Merge based on partitions
         multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
       }
-      #ifdef ERROR_LOGS
+      #ifdef DEBUG
       cudaDeviceSynchronize();
       err = cudaGetLastError();
       if (err != cudaSuccess) {
@@ -186,11 +164,9 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       
       if (edgeCaseTaskSize > listSize) {
         findPartitions<T, f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P, edgeCaseTaskSize);
-        #ifdef ERROR_LOGS
+        #ifdef DEBUG
         printPartitions<<<1,1>>>(pivots, listSize, edgeCaseTasks, P);
         testPartitioning<<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
-        #endif
-        #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
@@ -198,7 +174,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         }
         #endif
         multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks, P);
-        #ifdef ERROR_LOGS
+        #ifdef DEBUG
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("LINE 191 ERROR: %s\n", cudaGetErrorString(err));
@@ -206,7 +182,8 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         #endif
       } else {
         findPartitions<T, f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P, K*listSize);
-        #ifdef ERROR_LOGS
+        #ifdef DEBUG
+        printPartitions<<<1,1>>>(pivots, listSize, edgeCaseTasks, P);
         cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
@@ -214,7 +191,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         }
         #endif
         multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks, P);
-        #ifdef ERROR_LOGS
+        #ifdef DEBUG
         cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
@@ -232,14 +209,14 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       // Each warp only does one task
       if (edgeCaseTaskSize > listSize) {
         findPartitions<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, edgeCaseTaskSize);
-        #ifdef ERROR_LOGS
+        #ifdef DEBUG
         printf("CASE 5\n");
         printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
         testPartitioning<<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
         #endif
         cudaDeviceSynchronize();
         // testPartitioning<T><<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
-        #ifdef ERROR_LOGS
+        #ifdef DEBUG
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("LINE 257 ERROR: %s\n", cudaGetErrorString(err));
@@ -247,18 +224,18 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         #endif
         multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
         cudaDeviceSynchronize();
-        #ifdef ERROR_LOGS
+        #ifdef DEBUG
         err = cudaGetLastError();
         if (err != cudaSuccess) {
           printf("LINE 244 ERROR: %s\n", cudaGetErrorString(err));
         }
         #endif
       } else {
-        #ifdef ERROR_LOGS
+        #ifdef DEBUG
         printf("CASE 6\n");
         #endif
         findPartitions<T, f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, K*listSize);
-        #ifdef ERROR_LOGS
+        #ifdef DEBUG
         cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
@@ -266,7 +243,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         }
         #endif
         multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
-        #ifdef ERROR_LOGS
+        #ifdef DEBUG
         cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
@@ -278,7 +255,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       }
     }
     listBit = !listBit; // Switch input/output arrays
-    #ifdef ERROR_LOGS
+    #ifdef DEBUG
     err = cudaGetLastError();
     if (err != cudaSuccess){
       printf("LINE 297 CUDA Error: %s\n", cudaGetErrorString(err));
@@ -362,7 +339,7 @@ __global__ void testSortedSegments(int* d_arr, int segmentSize, int N) {
       if (i+j >= N) {
         break;
       }
-      if (f(d_arr[i+j], d_arr[i+j-1])) {
+      if (!f(d_arr[i+j-1], d_arr[i+j])) {
         printf("UNSORTED AT INDEX %d AND %d\n", i+j-1, i+j);
         return;
       }

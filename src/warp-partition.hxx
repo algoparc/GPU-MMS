@@ -32,6 +32,18 @@ __device__ int equals(T a, T b) {
   return !(f(a, b) ^ f(b, a));
 }
 
+__global__ void defaultPartitions(int* pivots, int P, int size, int edgeCaseTaskSize) {
+  int globalThreadIdx = blockDim.x * blockIdx.x + threadIdx.x;
+  if (globalThreadIdx < K*P) {
+    pivots[globalThreadIdx] = 0;
+    if (globalThreadIdx < K) {
+      int difference = edgeCaseTaskSize - threadIdx.x * size;
+      difference = (difference > 0) * difference;
+      int end = (difference < size)*difference + (size <= difference)*size; // taking MIN of difference and size using predicates
+      pivots[P*K+threadIdx.x] = end;
+    }
+  }
+}
 /*
 Code to evenly partition a single task into multiple parts, each to be handled by a single warp.
 
@@ -51,6 +63,7 @@ template<typename T, fptr_t f>
 __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerTask, int warpIdInTask, int edgeCaseTaskSize) {
   int tid = threadIdx.x%W;
   int target = warpIdInTask * (edgeCaseTaskSize / warpsPerTask);
+  int edgeCaseTaskSizeClone = edgeCaseTaskSize;
   if (warpIdInTask == 0) {
     if (tid < K) {
       tempPivots[tid] = 0;
@@ -61,55 +74,70 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
     int mid[K];
     int completed[K];
     int totalCompleted=0;
-    int totalSum=0;
     int L = (edgeCaseTaskSize+size-1)/size;
     edgeCaseTaskSize--;
     for (int i=0; i<L; i++) {
       left[i] = 0;
       right[i] = (edgeCaseTaskSize < size-1) * edgeCaseTaskSize + (size-1 <= edgeCaseTaskSize) * (size-1);
-      mid[i] = (left[i]+right[i])/2;
-      totalSum += mid[i];
+      mid[i] = (right[i]*target) / edgeCaseTaskSizeClone;
       edgeCaseTaskSize -= size;
       completed[i] = 0;
     }
 
     while (totalCompleted < L) {
-      if (totalSum >= target) {
-        T max = -12303595;
-        int maxIdx = -1;
-        for (int i=0; i<L; i++) {
-          if (!completed[i] && (equals<T,f>(max, data[size*i + mid[i]]) || f(max, data[size*i + mid[i]]))) {
+      T max = -12303595;
+      T min = INFINITY;
+      int maxIdx = -1;
+      int minIdx = -1;
+      int minIdxShift;
+      int maxIdxShift;
+      int shift;
+      for (int i=0; i<L; i++) {
+        if (!completed[i]) {
+          if (equals<T,f>(max, data[size*i + mid[i]]) || f(max, data[size*i + mid[i]])) {
             maxIdx = i;
             max = data[size*i + mid[i]];
           }
-          right[maxIdx] = mid[maxIdx];
-          mid[maxIdx] = (left[maxIdx]+right[maxIdx])/2;
-          totalSum += mid[maxIdx] - right[maxIdx];
-          if (left[maxIdx] + 1 >= right[maxIdx]) {
-            totalCompleted++;
-            completed[maxIdx] = 1;
-          }
-        }
-
-      } else {
-        T min = INFINITY;
-        int minIdx = -1;
-        for (int i=0; i<L; i++) {
-          if (!completed[i] && f(data[size*i + mid[i]], min)) {
+          if (f(data[size*i + mid[i]], min) && i != maxIdx) {
             minIdx = i;
             min = data[size*i + mid[i]];
           }
-          left[minIdx] = mid[minIdx];
-          mid[minIdx] = (left[minIdx]+right[minIdx])/2;
-          totalSum += mid[minIdx] - left[minIdx];
-          if (left[minIdx] + 1 >= right[minIdx]) {
-            totalCompleted++;
-            completed[minIdx] = 1;
-          }
         }
+      }
+      right[maxIdx] = mid[maxIdx];
+      left[minIdx] = mid[minIdx];
+
+      maxIdxShift = right[maxIdx] - (left[maxIdx]+right[maxIdx])/2;
+      minIdxShift = (left[minIdx]+right[minIdx])/2 - left[minIdx];
+
+      if (minIdxShift < maxIdxShift) {
+        shift = minIdxShift;
+      } else {
+        shift = maxIdxShift;
+      }
+
+      mid[maxIdx] = right[maxIdx] - shift;
+      mid[minIdx] = left[minIdx] + shift;
+      
+      if (left[maxIdx] + 1 >= right[maxIdx]) {
+        totalCompleted++;
+        completed[maxIdx] = 1;
+      }
+      
+      if (left[minIdx] + 1 >= right[minIdx]) {
+        totalCompleted++;
+        completed[minIdx] = 1;
       }
     }
 
+    for (int i=0; i < L; i++) {
+      if (!completed[i]) {
+        left[i] = mid[i];
+        right[i] = left[i]+1;
+        completed[i] = 1;
+        break;
+      }
+    }
 
     T minimumOfRightBoundaries = data[right[0]];
     int minRightIdx = 0;
@@ -150,7 +178,6 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
 
 */
 
-// If there is an edge case
 template<typename T, fptr_t f>
 __global__ void findPartitions(T* data, T*output, int* pivots, int size, int numLists, int tasks, int P, int edgeCaseTaskSize) {
   __shared__ int myPivotsRaw[K*(THREADS/W)];
@@ -202,6 +229,9 @@ void __global__ printPartitions(int* pivots, int size, int tasks, int P) {
   int warpsPerTask = totalWarps/tasks;
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     for (int i=0; i<K*warpsPerTask*tasks+K; i++) {
+      if (i % K == 0) {
+        printf("| ");
+      }
       printf("%d ", pivots[i]);
     }
   }

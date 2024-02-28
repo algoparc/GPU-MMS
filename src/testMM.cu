@@ -245,7 +245,8 @@ void test_squareSort(int N){
 
   for (int it = 0; it < ITERS; it++)
   {
-    create_random_list<T>(h_data, N, 0);
+    create_random_list<T>(h_data, N);
+    randomize<T>(h_data, N);
 
     cudaMemcpy(d_data, h_data, N * sizeof(T), cudaMemcpyHostToDevice);
     cudaMemcpy(cpu_data, h_data, N * sizeof(T), cudaMemcpyHostToHost);
