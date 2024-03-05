@@ -62,7 +62,6 @@ __forceinline__ __device__ bool xorMergeNodes(T* a, T* b, T* out) {
   aVal = aTemp;
 
   direction = f(b[B-1], a[B-1]);
-
 #pragma unroll
   for(int i=B/2; i>0; i=(i>>1)) {
     down = !(tid & i);
@@ -76,6 +75,11 @@ __forceinline__ __device__ bool xorMergeNodes(T* a, T* b, T* out) {
     testB = testB ^ down;
     if(testA) aVal = aTemp;
     if(testB) bVal = bTemp;
+  }
+//error here
+  tid = threadIdx.x%W;
+  if (tid < 0) {
+    printf("HERE");
   }
   out[tid] = aVal;
 
@@ -134,7 +138,7 @@ __forceinline__ __device__ T mergeIntoReg(T* heap, int minNode, int maxNode) {
 // Method to read a block of B elements from an input list and storing it in the leaf of our heap
 template<typename T>
 __forceinline__ __device__ void fillEmptyLeaf(T* input, T* heap, int listNum, int* start, int* end, int size, int tid) {
-  heap[((K-1+listNum)*B)+tid] = MAXVAL;
+  heap[((K-1+listNum)*W)+tid] = MAXVAL;
   if(start[listNum]+tid < end[listNum]) {
     heap[((K-1+listNum)*B)+tid] = input[start[listNum]+(size*listNum)+tid];
     if(tid==0)
@@ -166,6 +170,25 @@ __forceinline__ __device__ int fillRegsFromPathBit(T* elts, T* heap, int tid) {
   return path;
 }
 
+/*
+  Finds the path of the pipeline, and loads values into registers. For each thread, two values
+  are read, which are a single element of the left child and right child of the node that is
+  being merged into.
+*/
+
+template<typename T, fptr_t f>
+__forceinline__ __device__ void findPath(T* elts, T* heap, int* path) {
+  path[0]=0;
+  for (int i=0; i<PL; i++) {
+    if (i == threadIdx.x/32) {
+      elts[0] = heap[((2*path[i]+1)<<LOGB)+threadIdx.x%32];
+      elts[1] = heap[((2*path[i]+2)<<LOGB)+(B-1)-threadIdx.x%32];
+    }
+    path[i+1] = path[i]*2+1;
+    path[i+1] += !f(heap[(path[i+1]<<LOGB)+(B-1)], heap[((path[i+1]+1)<<LOGB)+(B-1)]);
+  }
+}
+
 // Each thread searches down path to find node to work on
 template<typename T, fptr_t f>
 __forceinline__ __device__ void fillRegsFromPath(T* elts, T* heap, int* path, int tid) {
@@ -184,30 +207,28 @@ __forceinline__ __device__ void fillRegsFromPath(T* elts, T* heap, int* path, in
 }
 
 template<typename T, fptr_t f>
-__forceinline__ __device__ void xorMergeGeneral(T* elts, T* heap, int tid) {
+__forceinline__ __device__ void xorMergeGeneral(T* elts, T* heap) {
 
-  T temp[2*PL];
+  T temp[2];
   bool down;
+  int tid = threadIdx.x%W;
 
-#pragma unroll
-  for(int j=0; j<PL<<1; j+=2) {
-      temp[j]=myMin<T,f>(elts[j],elts[j+1]);
-      elts[j+1] = myMax<T,f>(elts[j],elts[j+1]);
-      elts[j]=temp[j];
-  }
+  temp[0]=myMin<T,f>(elts[0],elts[1]);
+  elts[1] = myMax<T,f>(elts[0],elts[1]);
+  elts[0]=temp[0];
 
 #pragma unroll
   for(int i=B/2; i>0; i=(i>>1)) {
 
 #pragma unroll
-    for(int j=0; j<PL<<1; j++) {
+    for(int j=0; j<2; j++) {
       temp[j] = shfl_wrapper(elts[j], i, W);
     }
     down = (tid & i);
 
 
 #pragma unroll
-    for(int j=0; j<PL<<1; j++) {
+    for(int j=0; j<2; j++) {
       if(down) {
         elts[j] = myMax<T,f>(temp[j],elts[j]);
       }
@@ -222,29 +243,30 @@ __forceinline__ __device__ void xorMergeGeneral(T* elts, T* heap, int tid) {
 // Fill an empty node with the merge of its children
 // Pipelined version to increase ILP
 template<typename T, fptr_t f>
-__device__ int heapifyEmptyNodePipeline(T* heap, int* path, int tid) {
-  T elts[2*PL];
-  fillRegsFromPath<T,f>(elts, heap, path, tid);
+__device__ int heapifyEmptyNodePipeline(T* heap, int* path) {
+  T elts[2];
+  int warpIdx = threadIdx.x/W;
+  int tid = threadIdx.x%W;
+  findPath<T,f>(elts, heap, path);
 
-  xorMergeGeneral<T,f>(elts, heap, tid);
+  __syncthreads();
 
-  int idx=0;
-#pragma unroll
-  for(int i=0; i<PL; i++) {
-    heap[(path[i]<<5)+tid] = elts[idx];
-    heap[((path[i+1]-1+((path[i+1]&1)<<1))<<5)+tid] = elts[idx+1];
-    idx+=2;
-  }
+  xorMergeGeneral<T,f>(elts, heap);
+
+  __syncthreads();
+  heap[(path[warpIdx]<<5)+tid] = elts[0];
+  heap[((path[warpIdx+1]-1+((path[warpIdx+1]&1)<<1))<<5)+tid] = elts[1];
   return path[PL];
 
 }
 
 // Fill an empty node with the merge of its children
 template<typename T, fptr_t f>
-__device__ int heapifyEmptyNode(T* node, int nodeIdx, int altitude, int tid) {
+__device__ int heapifyEmptyNode(T* heap, int nodeIdx, int altitude, int tid) {
   bool direction;
   for(int i=0; i<altitude; i++) {
-    direction = xorMergeNodes<T,f>(node+((2*nodeIdx+1)*B), node+((2*nodeIdx+2)*B), node+(nodeIdx*B));
+    direction = xorMergeNodes<T,f>(heap+((2*nodeIdx+1)*B), heap+((2*nodeIdx+2)*B), heap+(nodeIdx*B));
+    __syncwarp();
     nodeIdx+=(nodeIdx+1);
     if(direction) //If new empty is right child
       nodeIdx++;
@@ -289,124 +311,41 @@ __device__ void buildHeap(T* input, T* heap, int* start, int* end, int size, int
 // Merge K lists into one using 1 warp
 template<typename T, fptr_t f>
 __device__ void multimergePipeline(T* input, T* output, int* start, int* end, int size, int outputOffset) {
-  int warpInBlock = threadIdx.x>>5;
-  int tid = threadIdx.x&(W-1);
-  __shared__ T heapData[B*(2*K-1)*(THREADS>>5)]; // Each warp in the block needs its own shared memory
-  T* heap = heapData+((B*(2*K-1))*warpInBlock);
-
+  __shared__ T heap[B*(2*K-1)]; // Each warp in the block needs its own shared memory
 
   int path[PL+1];
 
-  __syncwarp();
-  buildHeap<T,f>(input, heap, start, end, size,tid);
-  __syncwarp();
+  if (threadIdx.x < W) {
+    buildHeap<T,f>(input, heap, start, end, size, threadIdx.x);
+  }
+  __syncthreads();
 
-  int outputIdx=tid+outputOffset;
+  int outputIdx=threadIdx.x+outputOffset;
   int nodeIdx;
 
   while(heap[B-1] != MAXVAL) {
-    output[outputIdx] = heap[tid];
+    if (threadIdx.x < W) {
+      output[outputIdx] = heap[threadIdx.x];
+    }
     outputIdx += B;
-    nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path, tid);
-    __syncwarp();
-    fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
-    __syncwarp();
+    __syncthreads();
+    nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path);
+    __syncthreads();
+    if (threadIdx.x/W == THREADS/W - 1) {
+      int tid = threadIdx.x%W;
+      fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
+    }
+    __syncthreads();
   }
 
-  __syncwarp();
+  __syncthreads();
 
-  if(heap[tid] != MAXVAL) {
-    output[outputIdx] = heap[tid];
+  if(threadIdx.x < W && heap[threadIdx.x] != MAXVAL) {
+    output[outputIdx] = heap[threadIdx.x];
   }
 
 }
 
-
-template<typename T, fptr_t f>
-__device__ void mmp(T* input, T* output, int* start, int* end, int size, int outputOffset) {
-  int warpInBlock = threadIdx.x>>5;
-  int tid = threadIdx.x&(W-1);
-  __shared__ T heapData[B*(2*K-1)*(THREADS>>5)]; // Each warp in the block needs its own shared memory
-  T* heap = heapData+((B*(2*K-1))*warpInBlock);
-
-  int path[PL+1];
-
-  buildHeap<T,f>(input, heap, start, end, size,tid);
-    __syncwarp(); // unnecessary
-
-  int outputIdx=tid+outputOffset;
-  int nodeIdx;
-
-  while(heap[B-1] != MAXVAL) {
-    output[outputIdx] = heap[tid];
-    outputIdx += B;
-    nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path, tid);
-    fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
-  }
-
-  __syncwarp();
-
-  if(heap[tid] != MAXVAL) {
-    output[outputIdx] = heap[tid];
-  }
-}
-
-template<typename T, fptr_t f>
-__device__ void multimergePipelineEdgeCaseFull(T* input, T* output, int* start, int* end, int size, int outputOffset) {
-  int warpInBlock = threadIdx.x>>5;
-  int tid = threadIdx.x&(W-1);
-  __shared__ T heapData[B*(2*K-1)*(THREADS>>5)]; // Each warp in the block needs its own shared memory
-  T* heap = heapData+((B*(2*K-1))*warpInBlock);
-
-  int path[PL+1];
-
-  buildHeap<T,f>(input, heap, start, end, size,tid);
-
-  int outputIdx=tid+outputOffset;
-  int nodeIdx;
-
-  while(heap[B-1] != MAXVAL) {
-    output[outputIdx] = heap[tid];
-    outputIdx += B;
-    nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path, tid);
-    fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
-  }
-  // Write the last remaining node to global memory
-  if(heap[tid] != MAXVAL) {
-    output[outputIdx] = heap[tid];
-  }
-}
-
-template<typename T, fptr_t f>
-__device__ void multimergePipelineEdgeCasePartial(T* input, T* output, int* start, int* end, int size, int smallerSize, int outputOffset, int L) {
-  
-  
-  int tid = threadIdx.x&(W-1);
-  __shared__ T heap[B*(2*K-1)];
-
-  int path[PL+1];
-
-  buildHeap<T,f>(input, heap, start, end, size,tid);
-
-  /*
-  int outputIdx=tid+outputOffset;
-  int nodeIdx;
-
-  while(heap[B-1] != MAXVAL) {
-    output[outputIdx] = heap[tid];
-    outputIdx += B;
-    nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path, tid);
-    fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
-  }
-
-  // If there is still something in the highest node of the heap, write it out to global memory
-  // TODO: Fix this
-  if(heap[tid] != MAXVAL) {
-    output[outputIdx] = heap[tid];
-  }
-  */
-
-}
 // Merge K lists into one using 1 warp
 template<typename T, fptr_t f>
 __device__ void multimerge(T* input, T* output, int* start, int* end, int size, int outputOffset) {
