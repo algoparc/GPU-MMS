@@ -223,7 +223,7 @@ __global__ void findPartitions(T* data, int* pivots, int size, int tasks, int ed
     pivots[blockIdx.x*K+threadIdx.x] = myPivots[threadIdx.x];
   }
   // Not sure why this wouldn't be done by the last block instead of first block... Oh wait it doesn't matter. But for readability, make it the last block.
-  if(blockIdx.x==gridDim.x-1 && threadIdx.x<K) {  // Fill last K spots with end values
+  if(myTask==tasks-1 && threadIdx.x<K) {  // Fill last K spots with end values
     int difference = edgeCaseTaskSize - threadIdx.x * size;
     difference = (difference > 0) * difference;
     int end = (difference < size)*difference + (size <= difference)*size; // taking MIN of difference and size using predicates

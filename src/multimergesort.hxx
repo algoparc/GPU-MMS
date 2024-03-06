@@ -15,7 +15,7 @@
  *
  */
 
-// #define ERROR_LOGS
+#define ERROR_LOGS
 
 #include<stdio.h>
 #include<iostream>
@@ -67,12 +67,6 @@ template<typename T, fptr_t f>
 T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   #ifdef ERROR_LOGS
   cudaError_t err;
-  err = cudaGetLastError();
-  if (err != cudaSuccess){
-    printf("CUDA Error: %s\n", cudaGetErrorString(err));
-  } else {
-    printf("No errors immediately after multimergesort function call\n");
-  }
   #endif
   int* pivots;
   cudaMalloc((void**) &pivots, (P+1)*K*sizeof(int));
@@ -90,7 +84,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   T* values = (T*) malloc(N * sizeof(T));
 
   #ifdef ERROR_LOGS
-  printf("CASE 1\n");
+  printf("BASE CASE\n");
   #endif
 // Sort the base case into blocks of 1024 elements each
   squareSort<T,f><<<baseBlocks,THREADS_BASE_CASE>>>(input, N);
@@ -136,7 +130,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
   #endif
   for(listSize=M; listSize < N; listSize *= K) {
 
-
     tasks = N/listSize/K + ((N%(K*listSize))>listSize);
     edgeCaseTaskSize = N%(K*listSize);
 
@@ -155,8 +148,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
     #endif
 
     if(tasks > P) { // If each warp has its own designated task all to itself
-      for(int i=0; i<tasks/P; i++) {
-        // Shouldn't this fail if you have 127 normal tasks and 1 edge case task?
+      for(int i=0; i<(tasks-1)/P; i++) {
         cudaDeviceSynchronize();
         findPartitions<T, f><<<P,THREADS>>>(list[listBit]+(i*P*K*listSize), pivots, listSize, P, K*listSize);
         #ifdef ERROR_LOGS
@@ -181,8 +173,8 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
       } 
       #endif
 
-      int edgeCaseTasks = tasks%P;
-      int offset = (tasks/P)*P*K*listSize;
+      int edgeCaseTasks = tasks-((tasks-1)/P)*P;
+      int offset = ((tasks-1)/P)*P*K*listSize;
       
       
       if (edgeCaseTaskSize > listSize) {
@@ -190,8 +182,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         #ifdef ERROR_LOGS
         printPartitions<<<1,1>>>(pivots, listSize, edgeCaseTasks, P);
         testPartitioning<<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
-        #endif
-        #ifdef ERROR_LOGS
         cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
