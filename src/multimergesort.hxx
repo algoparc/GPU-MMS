@@ -34,7 +34,7 @@ template<typename T, fptr_t f>
 __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks);
 
 template<typename T>
-__global__ void copy(T* arr1, T* arr2);
+__global__ void copy(T* arr1, T* arr2, long offset, long N);
 
 template <typename T, fptr_t f>
 __global__ void testSortedSegments(int* d_arr, int segmentSize, int N);
@@ -217,8 +217,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         #endif
         // Remember that tasks includes the edgeCaseTasks
         if ((N-tasks*K*listSize)/THREADS)
-          copy<T><<<(N-tasks*K*listSize)/THREADS, THREADS>>>(list[listBit]+tasks*K*listSize, list[!listBit]+tasks*K*listSize);
-        
+          copy<T><<<(N-tasks*K*listSize+THREADS-1)/THREADS, THREADS>>>(list[listBit], list[!listBit], tasks*K*listSize, N);
       }
     }
 
@@ -253,6 +252,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         #endif
         findPartitions<T, f><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, K*listSize);
         #ifdef ERROR_LOGS
+        printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
         testPartitioning<<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
         cudaDeviceSynchronize();
         err = cudaGetLastError();
@@ -268,12 +268,15 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
           printf("LINE 285 ERROR: %s\n", cudaGetErrorString(err));
         }
         #endif
-        if ((N-tasks*K*listSize)/THREADS)
-          copy<T><<<(N-tasks*K*listSize)/THREADS, THREADS>>>(list[listBit]+tasks*K*listSize, list[!listBit]+tasks*K*listSize);
+        if ((N-tasks*K*listSize)/THREADS) {
+          // Adjust this. This has some floor/ceiling division issues
+          copy<T><<<(N-tasks*K*listSize+THREADS-1)/THREADS, THREADS>>>(list[listBit], list[!listBit], tasks*K*listSize, N);
+        }
       }
     }
     listBit = !listBit; // Switch input/output arrays
     #ifdef ERROR_LOGS
+    cudaDeviceSynchronize();
     err = cudaGetLastError();
     if (err != cudaSuccess){
       printf("LINE 297 CUDA Error: %s\n", cudaGetErrorString(err));
@@ -329,6 +332,7 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
       outputOffset+=start[i];
     __syncthreads();
 
+    #ifdef ERROR_LOGS
     if (threadIdx.x < K) {
       if (start[threadIdx.x] < 0) {
         printf("START FAILED\n");
@@ -336,17 +340,16 @@ __global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int 
       if (end[threadIdx.x] > size) {
         printf("END FAILED\n");
       }
-
-
-      //printf("ALIVE HERE");
     }
+    #endif
     multimergePipeline<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
   }
 }
 
 template<typename T>
-__global__ void copy(T* arr1, T* arr2){
-  arr2[blockIdx.x*THREADS + threadIdx.x] = arr1[blockIdx.x*THREADS + threadIdx.x];
+__global__ void copy(T* arr1, T* arr2, long offset, long N){
+  if (blockIdx.x*THREADS + threadIdx.x + offset < N)
+    arr2[blockIdx.x*THREADS + threadIdx.x + offset] = arr1[blockIdx.x*THREADS + threadIdx.x + offset];
 }
 
 // Launch with 1 thread and 1 block
