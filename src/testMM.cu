@@ -159,10 +159,10 @@ void test_multimergesort(int p, int N)
   for (int it = 0; it < ITERS; it++) {
 
     // Create random list to be sorted
-    // create_random_list<T>(h_data, N, 0);
+    create_random_list<T>(h_data, N, 0);
 
     // Create sorted initial list to test
-    create_sorted_list<T>(h_data, N, 0);
+    // create_sorted_list<T>(h_data, N, 0);
     
     // Copy list to GPU
     cudaMemcpy(d_data, h_data, N * sizeof(T), cudaMemcpyHostToDevice);
@@ -173,10 +173,7 @@ void test_multimergesort(int p, int N)
     cudaEventCreate(&stop);
     cudaEventRecord(start, 0);
 
-    // Run GPU-MMS.  T is datatype and cmp is comparison function (defined in cmp.hxx)
-    if (padding)
-      pad<T><<<1,padding>>>(d_data+N, MAXVAL - 1);
-    d_output = multimergesort<T, cmp>(d_data, d_output, h_data, p, N+padding);
+    d_output = multimergesort<T, cmp>(d_data, d_output, h_data, p, N);
     cudaDeviceSynchronize();
 
     cudaEventRecord(stop, 0);

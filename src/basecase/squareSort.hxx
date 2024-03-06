@@ -62,6 +62,30 @@ void printResult(int* data) {
 template<typename T, fptr_t f>
 __global__ void squareSort(T* data, int N) {
   T regs[ELTS];
+  int tid = threadIdx.x%W;
+  int warpId = threadIdx.x/W;
+  int warpOffset = warpId*ELTS*W;
+
+  if (blockIdx.x == gridDim.x - 1 && N%M) {
+    int remainder = N%M;
+    int offset = N-remainder;
+    if (threadIdx.x == 0) {
+      for (int i = 0; i < remainder; i++) {
+        T min = data[offset+i];
+        int index = i;
+        for (int j = i+1; j < remainder; j++) {
+          if (f(data[offset+j], min)) {
+            index = j;
+            min = data[offset+j];
+          }
+        }
+        T temp = data[offset+i];
+        data[offset+i] = min;
+        data[offset+index] = temp;
+      }
+    }
+  }
+  N = N-N%M;
 
 
   int blockOffset = M * blockIdx.x;
@@ -71,9 +95,7 @@ __global__ void squareSort(T* data, int N) {
       regs[i] = data[blockOffset + sec + (i*THREADS_BASE_CASE) + threadIdx.x];
     }
     
-    int tid = threadIdx.x%W;
-    int warpId = threadIdx.x/W;
-    int warpOffset = warpId*ELTS*W;
+    
     __shared__ T sData[M];
 
 // Code that is needed for base case larger than 1024.

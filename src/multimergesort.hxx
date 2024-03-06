@@ -15,7 +15,7 @@
  *
  */
 
-#define ERROR_LOGS
+// #define ERROR_LOGS
 
 #include<stdio.h>
 #include<iostream>
