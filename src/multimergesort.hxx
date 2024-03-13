@@ -231,11 +231,11 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         }
         #endif
       } else {
-        #ifdef DEBUG
-        printf("CASE 6\n");
-        #endif
         findPartitions<T, f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P, K*listSize);
         #ifdef DEBUG
+        printf("CASE 6\n");
+        cudaDeviceSynchronize();
+        printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
         cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {

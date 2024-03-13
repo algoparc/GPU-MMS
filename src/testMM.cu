@@ -163,7 +163,7 @@ void test_multimergesort(int p, int N)
     create_random_list<T>(h_data, N, 0);
 
     // Create sorted initial list to test
-    // create_sorted_list<T>(h_data, N, 0);
+    // create_sorted_list<T>(h_data, N);
     
     // Copy list to GPU
     cudaMemcpy(d_data, h_data, N * sizeof(T), cudaMemcpyHostToDevice);
