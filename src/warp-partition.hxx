@@ -73,7 +73,7 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
       completed[i] = 0;
     }
 
-    while (totalCompleted < L) {
+    while (totalCompleted < L-1) {
       if (totalSum >= target) {
         T max = -12303595;
         int maxIdx = -1;
@@ -82,15 +82,14 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
             maxIdx = i;
             max = data[size*i + mid[i]];
           }
-          right[maxIdx] = mid[maxIdx];
-          mid[maxIdx] = (left[maxIdx]+right[maxIdx])/2;
-          totalSum += mid[maxIdx] - right[maxIdx];
-          if (left[maxIdx] + 1 >= right[maxIdx]) {
-            totalCompleted++;
-            completed[maxIdx] = 1;
-          }
         }
-
+        right[maxIdx] = mid[maxIdx];
+        mid[maxIdx] = (left[maxIdx]+right[maxIdx])/2;
+        totalSum += mid[maxIdx] - right[maxIdx];
+        if (left[maxIdx] + 1 >= right[maxIdx]) {
+          totalCompleted++;
+          completed[maxIdx] = 1;
+        }
       } else {
         T min = INFINITY;
         int minIdx = -1;
@@ -99,13 +98,13 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
             minIdx = i;
             min = data[size*i + mid[i]];
           }
-          left[minIdx] = mid[minIdx];
-          mid[minIdx] = (left[minIdx]+right[minIdx])/2;
-          totalSum += mid[minIdx] - left[minIdx];
-          if (left[minIdx] + 1 >= right[minIdx]) {
-            totalCompleted++;
-            completed[minIdx] = 1;
-          }
+        }
+        left[minIdx] = mid[minIdx];
+        mid[minIdx] = (left[minIdx]+right[minIdx])/2;
+        totalSum += mid[minIdx] - left[minIdx];
+        if (left[minIdx] + 1 >= right[minIdx]) {
+          totalCompleted++;
+          completed[minIdx] = 1;
         }
       }
     }
