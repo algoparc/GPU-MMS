@@ -53,7 +53,6 @@ void create_random_sorted_list(T* data, int size) {
 
 template<typename T>
 void create_random_list(T* data, int size, int min) {
-  srand(time(NULL));
   long temp;
 //printf("size:%d\n", size);
   for(int i=0; i<size; i++) {
