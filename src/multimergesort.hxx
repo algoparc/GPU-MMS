@@ -236,6 +236,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         printf("CASE 6\n");
         cudaDeviceSynchronize();
         printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
+        testPartitioning<T><<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
         cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {

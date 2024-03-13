@@ -279,17 +279,18 @@ void __global__ testPartitioning(T* data, int* pivots, int size, int tasks, int 
   if(threadIdx.x==0 && blockIdx.x==0) {
     int pivotVal;
     int errorLocation=-1;
-    for(int i=1; i<warpsPerTask*tasks; i++) {
-      for(int j=0; j<K; j++) {
-        if(pivots[i*K+j] < size) {
-          if (pivots[i*K+j] > 0) {
-            pivotVal=data[size*j + pivots[i*K+j]];
+    for (int z=0; z<tasks; z++){
+      for(int i=0; i<warpsPerTask; i++) {
+        int offset = z*warpsPerTask+i;
+        for(int j=0; j<K; j++) {
+          if (pivots[offset+j] > 0) {
+            pivotVal=data[size*offset + pivots[offset+j]];
             for(int k=0; k<K; k++) {
-              if(pivots[i*K + k] > 0 && pivotVal < data[size*k + pivots[i*K + k] -1]) {
+              if(pivots[offset + k] > 0 && pivotVal < data[size*offset + pivots[offset + k] -1]) {
                 printf("i,j,k equal %d %d %d\n", i,j,k);
-                errorLocation=size*k + pivots[i*K + k] - 1;
-                int p1 = size*j+pivots[i*K+j];
-                int p2 = size*k+pivots[i*K+k]-1;
+                errorLocation=size*k + pivots[offset + k] - 1;
+                int p1 = size*offset+pivots[offset+j];
+                int p2 = size*offset+pivots[offset+k]-1;
                 printf("Partitioning failed, error location : %d\n", errorLocation);
                 printf("Neighborhood 1: %d %d %d\n", data[p1-1], data[p1], data[p1+1]);
                 printf("Neighborhood 2: %d %d %d\n", data[p2-1], data[p2], data[p2+1]);
