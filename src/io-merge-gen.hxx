@@ -253,7 +253,6 @@ __device__ int heapifyEmptyNodePipeline(T* heap, int* path) {
 
   xorMergeGeneral<T,f>(elts, heap);
 
-  __syncthreads();
   heap[(path[warpIdx]<<5)+tid] = elts[0];
   heap[((path[warpIdx+1]-1+((path[warpIdx+1]&1)<<1))<<5)+tid] = elts[1];
   return path[PL];
@@ -330,12 +329,10 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
     outputIdx += B;
     __syncthreads();
     nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path);
-    __syncthreads();
     if (threadIdx.x/W == THREADS/W - 1) {
       int tid = threadIdx.x%W;
       fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
     }
-    __syncthreads();
   }
 
   __syncthreads();
