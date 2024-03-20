@@ -75,7 +75,7 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
     int L = (edgeCaseTaskSize+size-1)/size;
     edgeCaseTaskSize--;
     for (int i=0; i<L; i++) {
-      left[i] = 0;
+      left[i] = -1;
       if (edgeCaseTaskSize > 0) {
         right[i] = (edgeCaseTaskSize > size-1) ? size-1 : edgeCaseTaskSize;
       } else {
@@ -162,32 +162,13 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
       }
     }
 
-    for (int i=0; i < L; i++) {
-      if (!completed[i]) {
-        left[i] = mid[i];
-        right[i] = left[i]+1;
-        completed[i] = 1;
-        break;
-      }
-    }
-
-    T minimumOfRightBoundaries = data[right[0]];
-    int minRightIdx = 0;
-    
-    for (int i=1; i<L; i++) {
-      if (f(minimumOfRightBoundaries, data[size*i + right[i]])) {
-        minimumOfRightBoundaries = data[size*i + right[i]];
-        minRightIdx = i;
-      }
-    }
-    
     for (int i=0; i<K; i++) {
       if (i<L) {
-        if (i == minRightIdx) {
+	if (!completed[i]) {
+	  tempPivots[i] = mid[i];
+	} else {
           tempPivots[i] = right[i];
-        } else {
-          tempPivots[i] = mid[i];
-        }
+	}
       } else {
         tempPivots[i] = 0;
       }
