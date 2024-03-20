@@ -30,7 +30,7 @@
 #define DEBUG 1 // Set shis to 1 to check that the output is correctly sorted
 #define PRINT 0 // Set this to 1 to print first M elements of the array for further debugging
 #define ITERS 1 // Number of iterations to compute average runtime
-#define BLOCKS 900
+#define BLOCKS 1200
 
 /* CPU FUNCTION HEADERS*/
 template <typename T>
@@ -159,7 +159,7 @@ void test_multimergesort(int p, int N)
   for (int it = 0; it < ITERS; it++) {
 
     // Create random list to be sorted
-    create_random_list<T>(h_data, N, 0);
+    create_random_list<T>(h_data, N);
 
     // Create sorted initial list to test
     // create_sorted_list<T>(h_data, N, 0);

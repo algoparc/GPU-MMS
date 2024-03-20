@@ -57,9 +57,11 @@ __forceinline__ __device__ bool xorMergeNodes(T* a, T* b, T* out) {
   bool testA;
   bool testB;
 
-  aTemp = myMin<T,f>(aVal,bVal); 
-  bVal = myMax<T,f>(aVal,bVal);
-  aVal = aTemp;
+  if (f(bVal, aVal)) {
+    aTemp = bVal;
+    bVal = aVal;
+    aVal = aTemp;
+  }
 
   direction = f(b[B-1], a[B-1]);
 #pragma unroll
@@ -76,11 +78,7 @@ __forceinline__ __device__ bool xorMergeNodes(T* a, T* b, T* out) {
     if(testA) aVal = aTemp;
     if(testB) bVal = bTemp;
   }
-//error here
-  tid = threadIdx.x%W;
-  if (tid < 0) {
-    printf("HERE");
-  }
+
   out[tid] = aVal;
 
   if(direction) {

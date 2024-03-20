@@ -52,14 +52,14 @@ void create_random_sorted_list(T* data, int size) {
 */
 
 template<typename T>
-void create_random_list(T* data, int size, int min) {
+void create_random_list(T* data, int size) {
   long temp;
 //printf("size:%d\n", size);
   for(int i=0; i<size; i++) {
 //    data[i].key = rand()%RANGE + min;
 //    data[i].val = rand()%RANGE + min;
-    data[i] = (rand()%RANGE) + min + 1;
-    temp = rand()%RANGE + min + 1;
+    data[i] = (rand()%RANGE);
+    temp = rand()%RANGE;
     data[i] += (temp<<32);
   }
 }
