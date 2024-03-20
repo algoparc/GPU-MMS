@@ -50,3 +50,7 @@ Current limitations of this implementation include:
 - Only input sizes that are M*(K^i) work, where M is the base case size (1024) and K is the chosen merge factor (defined in params.h).
 - As-is, base case can only be used to sort groups of 1024 elements.  Code is available to sort 2048 or 4096 as well, but it is commented out.
 - There is an issue with certain values of P and THREADS not working properly, depending on the input size.  Seems to be an issue with merging and needs to be debugged.
+
+## Branch details
+
+This branch contains two-move pivot partitioning
