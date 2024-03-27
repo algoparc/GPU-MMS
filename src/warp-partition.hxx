@@ -53,6 +53,13 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int blocksPer
   T minVal,maxVal;
   int minIdx, maxIdx;
   int L = (edgeCaseTaskSize + size - 1) / size;
+  if (L == 1) {
+    if (threadIdx.x == 0)
+      tempPivots[0] = ((blockIdInTask)*(edgeCaseTaskSize/blocksPerTask));
+    else if (threadIdx.x < K)
+      tempPivots[threadIdx.x] = 0;
+    return;
+  }
 
   __shared__ T candidates[K];
   __shared__ int pivotIdxSum;
@@ -214,7 +221,6 @@ __global__ void findPartitions(T* data, int* pivots, int size, int tasks, int ed
 
     
   } else if (myTask == tasks-1) {
-
     warp_partition<T, f>(data+taskOffset, myPivots, size, blocksPerTask, blockIdInTask, edgeCaseTaskSize);
 
   }
@@ -232,14 +238,14 @@ __global__ void findPartitions(T* data, int* pivots, int size, int tasks, int ed
   
 }
 
-void __global__ printPartitions(int* pivots, int size, int tasks, int P) {
-  int blocksPerTask = P/tasks;
+void __global__ printPartitions(int* pivots, int blocks) {
   if (threadIdx.x == 0 && blockIdx.x == 0) {
-    for (int i=0; i<K*blocksPerTask*tasks+K; i++) {
+    printf("-----------------------------------------------------------------------\n");
+    for (int i=0; i<K*blocks+K; i++) {
       printf("%d ", pivots[i]);
     }
+    printf("\n");
   }
-  printf("\n");
   
 }
 

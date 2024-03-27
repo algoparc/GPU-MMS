@@ -327,10 +327,12 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
     outputIdx += B;
     __syncthreads();
     nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path);
+    
     if (threadIdx.x/W == THREADS/W - 1) {
       int tid = threadIdx.x%W;
       fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
     }
+    
   }
 
   __syncthreads();
