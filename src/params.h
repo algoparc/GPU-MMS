@@ -16,20 +16,26 @@
  */
 
 
-#define K 4 // Branching factor (lists merged per round)
-#define PL 2 // Log of K
-#define PIPELINE 1 // Set to 1 to enable pipelining heap merging
+#define BLOCKS 900
+#define K 8 // Branching factor (lists merged per round)
+#define PL 3 // Log of K
+// #define PIPELINE // Define pipeline
+#define PIVOT_MOVES 1 // Determines the partitioning scheme; whether we move 2 pivots or 1 pivot with each step of the partition
 
-#define M 1024 // Size of base case (keep at 1024)
+#ifdef PIPELINE
+#define THREADS (W*PL) // W*PL // Threads per block
+#else
+#define THREADS 32
+#endif
+
 #define THREADS_BASE_CASE 32
 #define W 32
-#define THREADS (W*PL) // W*PL // Threads per block
 #define LOGW 5
 #define B 32
 #define LOGB 5
 #define RANGE 1048576 // Range of randomly generated values
 #define ELTS 32
-
+#define M 1024 // Size of base case
 #define FULL_MASK 0xFFFFFFFF // Full mask used for sync mask parameter
 
 #if defined(__CUDACC_VER_MAJOR__) // && defined(__CUDACC_VER_MINOR__)

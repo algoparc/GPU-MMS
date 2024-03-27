@@ -28,7 +28,7 @@
 
 
 template<typename T, fptr_t f>
-__device__ void equals(T a, T b) {
+__device__ int equals(T a, T b) {
   return !(f(a, b) ^ f(b, a));
 }
 
@@ -48,144 +48,291 @@ int L -- In the event of an edge case where you do not have K filled subarrays, 
 */
 
 template<typename T, fptr_t f>
-__device__ void warp_partition(T* data, int* tempPivots, int size, int blocksPerTask, int blockIdInTask, int edgeCaseTaskSize) {
-  int targetPivot = ((blockIdInTask)*(edgeCaseTaskSize/blocksPerTask));
-  T minVal,maxVal;
-  int minIdx, maxIdx;
-  int L = (edgeCaseTaskSize + size - 1) / size;
-  if (L == 1) {
-    if (threadIdx.x == 0)
-      tempPivots[0] = ((blockIdInTask)*(edgeCaseTaskSize/blocksPerTask));
-    else if (threadIdx.x < K)
-      tempPivots[threadIdx.x] = 0;
-    return;
-  }
-
-  __shared__ T candidates[K];
-  __shared__ int pivotIdxSum;
-
- volatile  __shared__ int startBoundary[K];
- volatile  __shared__ int endBoundary[K];
-
-  int end = 0;
-  __syncthreads();
-  // Initialize boundary positions
-  if(threadIdx.x < K) {
-
-    startBoundary[threadIdx.x] = 0;
-    int difference = edgeCaseTaskSize - threadIdx.x*size;
-    if (difference >= 0) {
-      end = (difference < size)*difference + (size <= difference)*size; // Minimum of difference and size, using predicate logic
+__device__ void single_pivot_partition(T* data, int* tempPivots, long size, long mergersPerTask, long mergerIdInTask, long taskSize) {
+  #ifdef PIPELINE
+  int tid = threadIdx.x;
+  #else
+  int tid = threadIdx.x%W;
+  #endif
+  if (mergerIdInTask == 0) {
+    if (tid < K) {
+      tempPivots[tid] = 0;
     }
-    endBoundary[threadIdx.x] = end;
-    tempPivots[threadIdx.x] = end/2;
-  }
-  __syncwarp();
-
-  if(threadIdx.x==0) {
-    int sum = 0;
-    for (int i = 0; i < K; i++) {
-      sum += tempPivots[i];
+  } else if (tid == 0) {
+    long left[K];
+    long right[K];
+    long mid[K];
+    int completed[K];
+    T PQMaxVals[K];
+    int PQMaxIndices[K];
+    T PQMinVals[K];
+    int PQMinIndices[K];
+    int totalCompleted=0;
+    int L = (taskSize+size-1)/size;
+    int sum=0;
+    long target = mergerIdInTask*taskSize/mergersPerTask;
+    if (L == 1) {
+      tempPivots[0] = ((mergerIdInTask)*(taskSize/mergersPerTask));
+      for (int i=1; i<K; i++) {
+        tempPivots[i] = 0;
+      }
+      return;
     }
-    pivotIdxSum = sum;
-  }
-  __syncwarp();
-
-
-// first warp of task begins at start of every list
-  if(blockIdInTask == 0 && threadIdx.x < K) {
-    tempPivots[threadIdx.x] = 0;
-  }
-
-  __syncwarp();
-
-// find min and max elts of list
-  if(blockIdInTask > 0) {
-    // Set initial candidate values
-    if(threadIdx.x < L) {
-      candidates[threadIdx.x] = data[size*threadIdx.x + tempPivots[threadIdx.x]];
+    for (int i=0; i<L; i++) {
+      left[i] = -1;
+      if (taskSize > 0) {
+        right[i] = (taskSize > size) ? size : taskSize;
+      } else {
+        right[i] = 0;
+      }
+      mid[i] = right[i]/2;
+      sum += mid[i];
+      taskSize -= size;
+      completed[i] = 0;
+      PQMaxVals[i] = data[size*i + mid[i]];
+      PQMaxIndices[i] = i;
+      PQMinVals[i] = data[size*i + mid[i]];
+      PQMinIndices[i] = i;
     }
-    
 
-    __shared__ T partitionVal;
-    __shared__ int partitionIdx;
-    __syncwarp();
-// Sequential section per warp 
-    if(threadIdx.x==0) {
-      
-      
-      partitionVal=MAXVAL;
-      while(partitionVal == MAXVAL) {
-      minVal=MAXVAL;
-      maxVal=MINVAL;
+    //Build max-heap
+    T temp;
+    int idxTemp;
+    for (int i=(L-2)/2; i>=0; i--) {
+      //Max-Heapify
+      int j=i;
+      int done=0;
+      while (2*j+1 < L || done) {
+        if (2*j+2 < L) {
+          if (f(PQMaxVals[2*j+1], PQMaxVals[2*j+2])) {
+            if (f(PQMaxVals[j], PQMaxVals[2*j+2])) {
+              temp = PQMaxVals[j];
+              PQMaxVals[j] = PQMaxVals[2*j+2];
+              PQMaxVals[2*j+2] = temp;
 
-          
-        for(int i=0; i<L; i++) {
-          if(f(candidates[i], minVal) && tempPivots[i] < size-1) {
-            minVal = candidates[i];
-            minIdx = i;
-          }
-          if(f(maxVal, candidates[i]) && tempPivots[i] > 0) {
-            maxVal = candidates[i];
-            maxIdx = i;
+              idxTemp = PQMaxIndices[j];
+              PQMaxIndices[j] = PQMaxIndices[2*j+2];
+              PQMaxIndices[2*j+2] = idxTemp;
+              j = 2*j+2;
+            } else {
+              done = 1;
+            }
+          } else {
+            if (f(PQMaxVals[j], PQMaxVals[2*j+1])) {
+              temp = PQMaxVals[i];
+              PQMaxVals[j] = PQMaxVals[2*j+1];
+              PQMaxVals[2*j+1] = temp;
+
+              idxTemp = PQMaxIndices[j];
+              PQMaxIndices[j] = PQMaxIndices[2*j+1];
+              PQMaxIndices[2*j+1] = idxTemp;
+              j = 2*j+1;
+            } else {
+              done = 1;
+            }
           }
         }
-
-// Move min and/or max candidates based on target order statistic
-        
-
-          // Check if the target pivot is greater than the current sum of pivot indices. If it is, move the minimum of the pivot indices
-        if(targetPivot >= pivotIdxSum) {
-          pivotIdxSum += (endBoundary[minIdx] - tempPivots[minIdx])/2; // Increase rank of current partition boundary
-          startBoundary[minIdx] = tempPivots[minIdx];
-          tempPivots[minIdx]=(endBoundary[minIdx]+startBoundary[minIdx])/2;
-          if(tempPivots[minIdx] == startBoundary[minIdx]) { // Edge case, when start=pivot=end-1
-            tempPivots[minIdx]++; 
-            pivotIdxSum++;
-          }
-          candidates[minIdx] = data[size*minIdx + tempPivots[minIdx]];
-          if(startBoundary[minIdx] >= endBoundary[minIdx] && tempPivots[minIdx] < size-1)  // If start >= end, we are done finding the partition value
-            partitionVal = candidates[minIdx];
-          partitionIdx = minIdx;
-        } 
-        else { // Check if the target 
-          pivotIdxSum -= (tempPivots[maxIdx] - startBoundary[ maxIdx])/2; // Increase rank of current partition boundary
-          endBoundary[maxIdx] = tempPivots[maxIdx];
-          tempPivots[maxIdx]=(endBoundary[maxIdx]+startBoundary[maxIdx])/2;
-          candidates[maxIdx] = data[size*maxIdx + tempPivots[maxIdx]];
-          if(startBoundary[maxIdx] >= endBoundary[maxIdx] && tempPivots[maxIdx] > 0)  // If start >= end, we are done finding the partition value
-            partitionVal = candidates[maxIdx];
-          partitionIdx = maxIdx;
-        }
-        
       }
     }
-      // Binary search each other list to find predecessor of partitioning value
-    __syncwarp();
 
-    if(threadIdx.x < L) {
-      if(threadIdx.x != partitionIdx) {
-        int left = 0;
-        int right = end;
-        int mid = end/2;
+    // Build min-heap
+    for (int i=(L-2)/2; i>=0; i--) {
+      //Min-Heapify
+      int j=i;
+      int done=0;
+      while (2*j+1 < L || done) {
+        if (2*j+2 < L) {
+          if (f(PQMinVals[2*j+2], PQMinVals[2*j+1])) {
+            if (f(PQMinVals[2*j+2], PQMinVals[j])) {
+              temp = PQMinVals[j];
+              PQMinVals[j] = PQMinVals[2*j+2];
+              PQMinVals[2*j+2] = temp;
 
-        while (right - left > 1) {
-          if (left == right - 2) {
-              mid = left;
-          }
-          if (f(partitionVal, data[size*threadIdx.x + mid])) {
-            right = mid + 1;
-            mid = (left+right)/2;
+              idxTemp = PQMinIndices[j];
+              PQMinIndices[j] = PQMinIndices[2*j+2];
+              PQMinIndices[2*j+2] = idxTemp;
+              j = 2*j+2;
+            } else {
+              done = 1;
+            }
           } else {
-            left = mid + 1;
-            mid = (left+right)/2;
+            if (f(PQMinVals[2*j+1], PQMinVals[j])) {
+              temp = PQMinVals[i];
+              PQMinVals[j] = PQMinVals[2*j+1];
+              PQMinVals[2*j+1] = temp;
+
+              idxTemp = PQMinIndices[j];
+              PQMinIndices[j] = PQMinIndices[2*j+1];
+              PQMinIndices[2*j+1] = idxTemp;
+              j = 2*j+1;
+            } else {
+              done = 1;
+            }
           }
         }
-        tempPivots[threadIdx.x] = mid;
+      }
+    }
+
+
+    int idx=0;
+
+    while (totalCompleted < L-1) {
+      int firstIndex;
+      for (int i=L-1; i>=0; i--) {
+        if (!completed[i]) {
+          firstIndex = i;
+        }
+      }
+      T val = data[size*firstIndex + mid[firstIndex]];
+      int moveMax = sum >= target;
+      idx = firstIndex;
+      for (int i=1; i<L; i++) {
+        if (!completed[i]) {
+          if (moveMax && (equals<T,f>(val, data[size*i + mid[i]]) || f(val, data[size*i + mid[i]]))) {
+            idx = i;
+            val = data[size*i + mid[i]];
+          } else if (!moveMax && f(data[size*i + mid[i]], val)) {
+            idx = i;
+            val = data[size*i + mid[i]];
+          }
+        }
+      }
+      
+      if (moveMax) {
+        right[idx] = mid[idx];
+      } else {
+        left[idx] = mid[idx];
+      }
+      sum -= mid[idx];
+      mid[idx] = (left[idx]+right[idx])/2;
+      sum += mid[idx];
+      
+      if (left[idx] + 1 == right[idx]) {
+        totalCompleted++;
+        completed[idx] = 1;
+        sum++; // Add 1 to sum, because mid currently equals left, and we return right[];
+      }
+    }
+
+    for (int i=0; i<K; i++) {
+      if (i<L) {
+        if (!completed[i]) {
+          mid[i] += target-sum;
+          tempPivots[i] = mid[i];
+        } else {
+          tempPivots[i] = right[i];
+        }
+      } else {
+        tempPivots[i] = 0;
       }
     }
   }
 }
+
+template<typename T, fptr_t f>
+__device__ void double_pivot_partition(T* data, int* tempPivots, long size, long mergersPerTask, long mergerIdInTask, long taskSize) {
+  #ifdef PIPELINE
+  int tid = threadIdx.x;
+  #else
+  int tid = threadIdx.x%W;
+  #endif
+  if (mergerIdInTask == 0) {
+    if (tid < K) {
+      tempPivots[tid] = 0;
+    }
+  } else if (tid == 0) {
+    long left[K];
+    long right[K];
+    long mid[K];
+    int completed[K];
+    int totalCompleted=0;
+    int L = (taskSize+size-1)/size;
+    if (L == 1) {
+      tempPivots[0] = ((mergerIdInTask)*(taskSize/mergersPerTask));
+      for (int i=1; i<K; i++) {
+        tempPivots[i] = 0;
+      }
+      return;
+    }
+    for (int i=0; i<L; i++) {
+      left[i] = -1;
+      if (taskSize > 0) {
+        right[i] = (taskSize > size) ? size : taskSize;
+      } else {
+        right[i] = 0;
+      }
+      mid[i] = right[i]*mergerIdInTask / mergersPerTask;
+      taskSize -= size;
+      completed[i] = 0;
+    }
+
+    while (totalCompleted < L-1) {
+      int firstIndex;
+      for (int i=L-1; i>=0; i--) {
+        if (!completed[i]) {
+          firstIndex = i;
+        }
+      }
+      T max = data[size*firstIndex + mid[firstIndex]];
+      T min = data[size*firstIndex + mid[firstIndex]];
+      int maxIdx = firstIndex;
+      int minIdx = firstIndex;
+      int minIdxShift;
+      int maxIdxShift;
+      int shift;
+      for (int i=1; i<L; i++) {
+        if (!completed[i]) {
+          if (equals<T,f>(max, data[size*i + mid[i]]) || f(max, data[size*i + mid[i]])) {
+            maxIdx = i;
+            max = data[size*i + mid[i]];
+          }
+          if (f(data[size*i + mid[i]], min) && !equals<T,f>(min, data[size*i + mid[i]])) {
+            minIdx = i;
+            min = data[size*i + mid[i]];
+          }
+        }
+      }
+      
+      right[maxIdx] = mid[maxIdx];
+      left[minIdx] = mid[minIdx];
+
+      maxIdxShift = right[maxIdx] - (left[maxIdx]+right[maxIdx])/2;
+      minIdxShift = (left[minIdx]+right[minIdx])/2 - left[minIdx];
+
+      if (minIdxShift < maxIdxShift) {
+        shift = minIdxShift;
+      } else {
+        shift = maxIdxShift;
+      }
+
+      mid[maxIdx] = right[maxIdx] - shift;
+      mid[minIdx] = left[minIdx] + shift;
+      
+      if (left[maxIdx] + 1 == right[maxIdx]) {
+        totalCompleted++;
+        completed[maxIdx] = 1;
+      }
+      
+      if (left[minIdx] + 1 == right[minIdx]) {
+        totalCompleted++;
+        completed[minIdx] = 1;
+      }
+    }
+
+    for (int i=0; i<K; i++) {
+      if (i<L) {
+        if (!completed[i]) {
+          tempPivots[i] = mid[i];
+        } else {
+          tempPivots[i] = right[i];
+        }
+      } else {
+        tempPivots[i] = 0;
+      }
+    }
+  }
+}
+
 
 /*
   Finds the pivots for all warps. Invokes warp-partition to properly binary search every pivot.
@@ -204,38 +351,48 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int blocksPer
 // If there is an edge case
 template<typename T, fptr_t f>
 __global__ void findPartitions(T* data, int* pivots, int size, int tasks, int edgeCaseTaskSize) {
+  #ifdef PIPELINE
   __shared__ int myPivots[K];
-  int myTask;
-  int taskOffset;
-  int blocksPerTask;
-  int blockIdInTask;
+  int mergerIdx = blockIdx.x;
+  int mergersPerTask = gridDim.x/tasks;
+  int myTask = blockIdx.x / mergersPerTask;
+  int mergerIdInTask = blockIdx.x - myTask*mergersPerTask;
+  int tid = threadIdx.x;
+  #else
+  __shared__ int myPivotsRaw[K*(THREADS/W)];
+  int* myPivots = myPivotsRaw+(threadIdx.x/W)*K;
+  int mergerIdx = blockIdx.x*(THREADS/W) + (threadIdx.x/W);
+  int mergersPerTask = (gridDim.x*(THREADS/W))/tasks;
+  int myTask = mergerIdx / mergersPerTask;
+  int mergerIdInTask = mergerIdx - myTask*mergersPerTask;
+  int tid = threadIdx.x%W;
+  #endif
+  int taskOffset = myTask*size*K;
+  int taskSize = (myTask<tasks-1) ? K*size : edgeCaseTaskSize;
 
-  blocksPerTask = gridDim.x/tasks;
-  myTask = blockIdx.x / blocksPerTask; // If we have extra warps, just have them do no work...
-  taskOffset = myTask*size*K;
-  blockIdInTask = blockIdx.x - myTask*blocksPerTask;
-  __syncthreads();
-  if(myTask < tasks-1) {
+  if(myTask < tasks) {
     // In this case, we don't have the edge case, so we reuse the same warp_partition function
-    warp_partition<T, f>(data+taskOffset, myPivots, size, blocksPerTask, blockIdInTask, K*size);
-
-    
-  } else if (myTask == tasks-1) {
-    warp_partition<T, f>(data+taskOffset, myPivots, size, blocksPerTask, blockIdInTask, edgeCaseTaskSize);
-
+    #ifdef PIVOT_MOVES
+    #if (PIVOT_MOVES == 1)
+    single_pivot_partition<T, f>(data+taskOffset, myPivots, size, mergersPerTask, mergerIdInTask, taskSize);
+    #else
+    double_pivot_partition<T, f>(data+taskOffset, myPivots, size, mergersPerTask, mergerIdInTask, taskSize);
+    #endif
+    #else
+    single_pivot_partition<T, f>(data+taskOffset, myPivots, size, mergersPerTask, mergerIdInTask, taskSize);
+    #endif
   }
-  __syncthreads();
-  if(threadIdx.x < K) {
-    pivots[blockIdx.x*K+threadIdx.x] = myPivots[threadIdx.x];
+
+  if(tid < K) {
+    pivots[mergerIdx*K+tid] = myPivots[tid];
   }
-  // Not sure why this wouldn't be done by the last block instead of first block... Oh wait it doesn't matter. But for readability, make it the last block.
-  if(myTask==tasks-1 && threadIdx.x<K) {  // Fill last K spots with end values
-    int difference = edgeCaseTaskSize - threadIdx.x * size;
+
+  if(myTask==tasks-1 && tid<K) {  // Fill last K spots with end values
+    int difference = edgeCaseTaskSize - tid * size;
     difference = (difference > 0) * difference;
     int end = (difference < size)*difference + (size <= difference)*size; // taking MIN of difference and size using predicates
-    pivots[blocksPerTask*tasks*K+threadIdx.x] = end;
+    pivots[mergersPerTask*tasks*K+tid] = end;
   }
-  
 }
 
 void __global__ printPartitions(int* pivots, int blocks) {
@@ -247,37 +404,4 @@ void __global__ printPartitions(int* pivots, int blocks) {
     printf("\n");
   }
   
-}
-
-/* FOR DEBUGGING - MAKES SURE PIVOTS MAKE A VALID PARTITION */
-template<typename T>
-void __global__ testPartitioning(T* data, int* pivots, int size, int tasks, int P) {
-  int blocksPerTask = gridDim.x/tasks; // floor
-
-  if(threadIdx.x==0 && blockIdx.x==0) {
-    int pivotVal;
-    int errorLocation=-1;
-    for(int i=1; i<blocksPerTask*tasks; i++) {
-      for(int j=0; j<K; j++) {
-        if(pivots[i*K+j] < size) {
-          if (pivots[i*K+j] > 0) {
-            pivotVal=data[size*j + pivots[i*K+j]];
-            for(int k=0; k<K; k++) {
-              if(pivots[i*K + k] > 0 && pivotVal < data[size*k + pivots[i*K + k] -1]) {
-                printf("i,j,k equal %d %d %d\n", i,j,k);
-                errorLocation=size*k + pivots[i*K + k] - 1;
-                int p1 = size*j+pivots[i*K+j];
-                int p2 = size*k+pivots[i*K+k]-1;
-                printf("Partitioning failed, error location : %d\n", errorLocation);
-                printf("Neighborhood 1: %d %d %d\n", data[p1-1], data[p1], data[p1+1]);
-                printf("Neighborhood 2: %d %d %d\n", data[p2-1], data[p2], data[p2+1]);
-                return;
-              }
-            }
-          }
-        }
-      }
-    }
-    printf("Partitions correct!\n");
-  }
 }

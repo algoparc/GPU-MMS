@@ -15,6 +15,9 @@
  *
  */
 
+// #define DEBUG
+#define ITERS 1 // Number of iterations to compute average runtime
+
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
@@ -27,14 +30,9 @@
 
 #include <stdlib.h>
 
-#define DEBUG 1 // Set shis to 1 to check that the output is correctly sorted
-#define PRINT 0 // Set this to 1 to print first M elements of the array for further debugging
-#define ITERS 1 // Number of iterations to compute average runtime
-#define BLOCKS 900
-
 /* CPU FUNCTION HEADERS*/
 template <typename T>
-void test_multimergesort(int p, int N);
+void test_multimergesort(int N);
 template <typename T>
 void test_deterministic_mergelevels(int p, int N);
 template <typename T>
@@ -56,8 +54,8 @@ int main(int argc, char **argv)
   }
 
   int N = atoi(argv[1]);
-  test_multimergesort<DATATYPE>(BLOCKS, N);
-  // test_deterministic_mergelevels<DATATYPE>(BLOCKS, N);
+  test_multimergesort<DATATYPE>(N);
+  // test_deterministic_mergelevels<DATATYPE>(N);
   // test_squareSort<DATATYPE>(N);
 
   return 0;
@@ -133,7 +131,7 @@ void test_deterministic_mergelevels(int p, int N)
 
 // Create random data and sort it...
 template <typename T>
-void test_multimergesort(int p, int N)
+void test_multimergesort(int N)
 {
   cudaEvent_t start, stop;
   float time_elapsed = 0.0;
@@ -173,7 +171,7 @@ void test_multimergesort(int p, int N)
     cudaEventCreate(&stop);
     cudaEventRecord(start, 0);
 
-    d_output = multimergesort<T, cmp>(d_data, d_output, h_data, p, N);
+    d_output = multimergesort<T, cmp>(d_data, d_output, h_data, N);
     cudaDeviceSynchronize();
 
     cudaEventRecord(stop, 0);
@@ -211,14 +209,6 @@ void test_multimergesort(int p, int N)
     printf("NOT SORTED! Item at index %d is less than its predecessor.\n", erroneous_index);
   else
     printf("SORTED!\n");
-  
-
-#if PRINT == 1
-  printf("[%d", h_data[0]);
-  for (int i = 1; i < M; i++)
-    printf(", %d", h_data[i]);
-  printf("]\n");
-#endif
 #endif
 
   cudaFree(d_data);
