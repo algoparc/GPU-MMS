@@ -102,7 +102,7 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
       //Max-Heapify
       int j=i;
       int done=0;
-      while (2*j+1 < L || done) {
+      while (2*j+1 < L && !done) {
         if (2*j+2 < L) {
           if (f(PQMaxVals[2*j+1], PQMaxVals[2*j+2])) {
             if (f(PQMaxVals[j], PQMaxVals[2*j+2])) {
@@ -131,6 +131,19 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
               done = 1;
             }
           }
+        } else {
+          if (f(PQMaxVals[j], PQMaxVals[2*j+2])) {
+              temp = PQMaxVals[j];
+              PQMaxVals[j] = PQMaxVals[2*j+2];
+              PQMaxVals[2*j+2] = temp;
+
+              idxTemp = PQMaxIndices[j];
+              PQMaxIndices[j] = PQMaxIndices[2*j+2];
+              PQMaxIndices[2*j+2] = idxTemp;
+              j = 2*j+2;
+            } else {
+              done = 1;
+            }
         }
       }
     }
@@ -140,7 +153,7 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
       //Min-Heapify
       int j=i;
       int done=0;
-      while (2*j+1 < L || done) {
+      while (2*j+1 < L && !done) {
         if (2*j+2 < L) {
           if (f(PQMinVals[2*j+2], PQMinVals[2*j+1])) {
             if (f(PQMinVals[2*j+2], PQMinVals[j])) {
@@ -157,7 +170,7 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
             }
           } else {
             if (f(PQMinVals[2*j+1], PQMinVals[j])) {
-              temp = PQMinVals[i];
+              temp = PQMinVals[j];
               PQMinVals[j] = PQMinVals[2*j+1];
               PQMinVals[2*j+1] = temp;
 
@@ -169,6 +182,19 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
               done = 1;
             }
           }
+        } else {
+          if (f(PQMinVals[2*j+1], PQMinVals[j])) {
+            temp = PQMinVals[j];
+            PQMinVals[j] = PQMinVals[2*j+1];
+            PQMinVals[2*j+1] = temp;
+
+            idxTemp = PQMinIndices[j];
+            PQMinIndices[j] = PQMinIndices[2*j+1];
+            PQMinIndices[2*j+1] = idxTemp;
+            j = 2*j+1;
+          } else {
+            done = 1;
+          } 
         }
       }
     }
@@ -177,30 +203,13 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
     int idx=0;
 
     while (totalCompleted < L-1) {
-      int firstIndex;
-      for (int i=L-1; i>=0; i--) {
-        if (!completed[i]) {
-          firstIndex = i;
-        }
-      }
-      T val = data[size*firstIndex + mid[firstIndex]];
       int moveMax = sum >= target;
-      idx = firstIndex;
-      for (int i=1; i<L; i++) {
-        if (!completed[i]) {
-          if (moveMax && (equals<T,f>(val, data[size*i + mid[i]]) || f(val, data[size*i + mid[i]]))) {
-            idx = i;
-            val = data[size*i + mid[i]];
-          } else if (!moveMax && f(data[size*i + mid[i]], val)) {
-            idx = i;
-            val = data[size*i + mid[i]];
-          }
-        }
-      }
       
       if (moveMax) {
+        idx = PQMaxIndices[0];
         right[idx] = mid[idx];
       } else {
+        idx = PQMinIndices[0];
         left[idx] = mid[idx];
       }
       sum -= mid[idx];
@@ -211,6 +220,85 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
         totalCompleted++;
         completed[idx] = 1;
         sum++; // Add 1 to sum, because mid currently equals left, and we return right[];
+        if (moveMax) {
+          PQMaxIndices[0] = PQMaxIndices[L-totalCompleted];
+          PQMaxVals[0] = PQMaxVals[L-totalCompleted];
+        } else {
+          PQMinIndices[0] = PQMinIndices[L-totalCompleted];
+          PQMinVals[0] = PQMinVals[L-totalCompleted];
+        }
+      } else {
+        if (moveMax) {
+          PQMaxVals[0] = data[size*idx + mid[idx]];
+          int done = 0;
+          int j=0;
+          while (2*j+1 < L-totalCompleted && !done) {
+            if (2*j+2 < L-totalCompleted) {
+              if (f(PQMaxVals[2*j+1], PQMaxVals[2*j+2])) {
+                if (f(PQMaxVals[j], PQMaxVals[2*j+2])) {
+                  temp = PQMaxVals[j];
+                  PQMaxVals[j] = PQMaxVals[2*j+2];
+                  PQMaxVals[2*j+2] = temp;
+
+                  idxTemp = PQMaxIndices[j];
+                  PQMaxIndices[j] = PQMaxIndices[2*j+2];
+                  PQMaxIndices[2*j+2] = idxTemp;
+                  j = 2*j+2;
+                } else {
+                  done = 1;
+                }
+              } else {
+                if (f(PQMaxVals[j], PQMaxVals[2*j+1])) {
+                  temp = PQMaxVals[j];
+                  PQMaxVals[j] = PQMaxVals[2*j+1];
+                  PQMaxVals[2*j+1] = temp;
+
+                  idxTemp = PQMaxIndices[j];
+                  PQMaxIndices[j] = PQMaxIndices[2*j+1];
+                  PQMaxIndices[2*j+1] = idxTemp;
+                  j = 2*j+1;
+                } else {
+                  done = 1;
+                }
+              }
+            }
+          }
+        } else {
+          PQMinVals[0] = data[size*idx + mid[idx]];
+          int done = 0;
+          int j=0;
+          while (2*j+1 < L-totalCompleted && !done) {
+            if (2*j+2 < L-totalCompleted) {
+              if (f(PQMinVals[2*j+2], PQMinVals[2*j+1])) {
+                if (f(PQMinVals[2*j+2], PQMinVals[j])) {
+                  temp = PQMinVals[j];
+                  PQMinVals[j] = PQMinVals[2*j+2];
+                  PQMinVals[2*j+2] = temp;
+
+                  idxTemp = PQMinIndices[j];
+                  PQMinIndices[j] = PQMinIndices[2*j+2];
+                  PQMinIndices[2*j+2] = idxTemp;
+                  j = 2*j+2;
+                } else {
+                  done = 1;
+                }
+              } else {
+                if (f(PQMinVals[2*j+1], PQMinVals[j])) {
+                  temp = PQMinVals[j];
+                  PQMinVals[j] = PQMinVals[2*j+1];
+                  PQMinVals[2*j+1] = temp;
+
+                  idxTemp = PQMinIndices[j];
+                  PQMinIndices[j] = PQMinIndices[2*j+1];
+                  PQMinIndices[2*j+1] = idxTemp;
+                  j = 2*j+1;
+                } else {
+                  done = 1;
+                }
+              }
+            }
+          }
+        }
       }
     }
 
