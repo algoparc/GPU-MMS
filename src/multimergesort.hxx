@@ -125,7 +125,7 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
 
     #ifdef DEBUG
     printf("SORT FOR THIS LEVEL COMPLETED\n");
-    testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
+    // testSortedSegments<T, cmp><<<1,1>>>(list[listBit], listSize, N);
     cudaDeviceSynchronize();
     err = cudaGetLastError();
     if (err != cudaSuccess){

@@ -60,7 +60,7 @@ int L -- In the event of an edge case where you do not have K filled subarrays, 
 */
 
 template<typename T, fptr_t f>
-__device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerTask, int warpIdInTask, int edgeCaseTaskSize) {
+__device__ void warp_partition(T* data, int* tempPivots, long size, long warpsPerTask, long warpIdInTask, long edgeCaseTaskSize) {
   int tid = threadIdx.x%W;
   if (warpIdInTask == 0) {
     if (tid < K) {
@@ -73,6 +73,8 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
     int completed[K];
     int totalCompleted=0;
     int L = (edgeCaseTaskSize+size-1)/size;
+    int sum=0;
+    long target = warpIdInTask*edgeCaseTaskSize/warpsPerTask;
     edgeCaseTaskSize--;
     for (int i=0; i<L; i++) {
       left[i] = -1;
@@ -81,10 +83,13 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
       } else {
         right[i] = 0;
       }
-      mid[i] = right[i]*warpIdInTask / warpsPerTask;
+      mid[i] = right[i]/2;
+      sum += mid[i];
       edgeCaseTaskSize -= size;
       completed[i] = 0;
     }
+
+    int idx=0;
 
     while (totalCompleted < L-1) {
       int firstIndex;
@@ -93,70 +98,35 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
           firstIndex = i;
         }
       }
-      T max = data[size*firstIndex + mid[firstIndex]];
-      T min = data[size*firstIndex + mid[firstIndex]];
-      int maxIdx = firstIndex;
-      int minIdx = firstIndex;
-      int minIdxShift;
-      int maxIdxShift;
-      int shift;
+      T val = data[size*firstIndex + mid[firstIndex]];
+      int moveMax = sum >= target;
+      idx = firstIndex;
       for (int i=1; i<L; i++) {
         if (!completed[i]) {
-          if (equals<T,f>(max, data[size*i + mid[i]]) || f(max, data[size*i + mid[i]])) {
-            maxIdx = i;
-            max = data[size*i + mid[i]];
-          }
-          if (f(data[size*i + mid[i]], min) && !equals<T,f>(min, data[size*i + mid[i]])) {
-            minIdx = i;
-            min = data[size*i + mid[i]];
+          if (moveMax && (equals<T,f>(val, data[size*i + mid[i]]) || f(val, data[size*i + mid[i]]))) {
+            idx = i;
+            val = data[size*i + mid[i]];
+          } else if (!moveMax && f(data[size*i + mid[i]], val)) {
+            idx = i;
+            val = data[size*i + mid[i]];
           }
         }
       }
-
-      #ifdef DEBUG
-      if (minIdx < 0 || maxIdx < 0 || minIdx == maxIdx) {
-        printf("ERROR! LOOP INVARIANT BROKEN! %d %d \n", minIdx, maxIdx);
-        printf("VALUES: ");
-        for (int i=0; i<L; i++) {
-          printf("%d ", data[size*i+mid[i]]);
-        }
-        printf("\n");
-        printf("COMPLETED: ");
-        for (int i=0; i<L; i++) {
-          printf("%d ", completed[i]);
-        }
-        printf("\n");
-        return;
-      }
-      #endif
       
-      right[maxIdx] = mid[maxIdx];
-      left[minIdx] = mid[minIdx];
-
-      maxIdxShift = right[maxIdx] - (left[maxIdx]+right[maxIdx])/2;
-      minIdxShift = (left[minIdx]+right[minIdx])/2 - left[minIdx];
-
-      if (minIdxShift < maxIdxShift) {
-        shift = minIdxShift;
+      if (moveMax) {
+        right[idx] = mid[idx];
       } else {
-        shift = maxIdxShift;
+        left[idx] = mid[idx];
       }
-
-      mid[maxIdx] = right[maxIdx] - shift;
-      mid[minIdx] = left[minIdx] + shift;
+      sum -= mid[idx];
+      mid[idx] = (left[idx]+right[idx])/2;
+      sum += mid[idx];
       
-      if (left[maxIdx] + 1 == right[maxIdx]) {
+      if (left[idx] + 1 == right[idx]) {
         totalCompleted++;
-        completed[maxIdx] = 1;
-      } else if (left[maxIdx] + 1 > right[maxIdx]) {
-        printf("LOOP INVARIANT VIOLATED! LEFT[IDX] + 1 > RIGHT[IDX]\n");
-        return;
-      }
-      
-      if (left[minIdx] + 1 == right[minIdx]) {
-        totalCompleted++;
-        completed[minIdx] = 1;
-      } else if (left[minIdx] + 1 > right[minIdx]) {
+        completed[idx] = 1;
+        sum++; // Add 1 to sum, because mid currently equals left, and we return right[];
+      } else if (left[idx] + 1 > right[idx]) {
         printf("LOOP INVARIANT VIOLATED! LEFT[IDX] + 1 > RIGHT[IDX]\n");
         return;
       }
@@ -165,6 +135,7 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
     for (int i=0; i<K; i++) {
       if (i<L) {
 	if (!completed[i]) {
+    mid[i] += target-sum;
 	  tempPivots[i] = mid[i];
 	} else {
           tempPivots[i] = right[i];
@@ -191,16 +162,16 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
 */
 
 template<typename T, fptr_t f>
-__global__ void findPartitions(T* data, T*output, int* pivots, int size, int numLists, int tasks, int P, int edgeCaseTaskSize) {
+__global__ void findPartitions(T* data, T*output, int* pivots, long size, int numLists, int tasks, int P, int edgeCaseTaskSize) {
   __shared__ int myPivotsRaw[K*(THREADS/W)];
   int warpInBlock = threadIdx.x/W;
   int* myPivots = myPivotsRaw+(warpInBlock*K);
   int warpIdx = (blockIdx.x)*(THREADS/W) + warpInBlock;
   int tid = threadIdx.x%W;
-  int warpsPerTask;
+  long warpsPerTask;
   int myTask;
   int taskOffset;
-  int warpIdInTask;
+  long warpIdInTask;
   int totalWarps = P*(THREADS/W);
 
   /*

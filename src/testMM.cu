@@ -16,10 +16,11 @@
  */
 
 
-#define DEBUG 1 // Set shis to 1 to check that the output is correctly sorted
+// #define DEBUG
 #define PRINT 0 // Set this to 1 to print first M elements of the array for further debugging
 #define ITERS 1 // Number of iterations to compute average runtime
 #define BLOCKS 128
+// #define CHECK
 
 #include <stdio.h>
 #include <iostream>
@@ -160,10 +161,10 @@ void test_multimergesort(int p, int N)
   for (int it = 0; it < ITERS; it++) {
 
     // Create random list to be sorted
-    // create_random_list<T>(h_data, N, 0);
+    create_random_list<T>(h_data, N, 0);
 
     // Create sorted initial list to test
-    create_sorted_list<T>(h_data, N);
+    // create_sorted_list<T>(h_data, N);
     // randomize<T>(h_data, N);
     
     // Copy list to GPU
@@ -201,7 +202,7 @@ void test_multimergesort(int p, int N)
   cudaMemcpy(h_data, d_output, N * sizeof(T), cudaMemcpyDeviceToHost);
 
 // If debug mode is on, check that output is correct
-#ifdef DEBUG
+#ifdef CHECK
   bool error = false;
   int erroneous_index;
   for (int i = 1; i < N; i++){
@@ -217,13 +218,6 @@ void test_multimergesort(int p, int N)
   else
     printf("SORTED!\n");
   
-
-#if PRINT == 1
-  printf("[%d", h_data[0]);
-  for (int i = 1; i < M; i++)
-    printf(", %d", h_data[i]);
-  printf("]\n");
-#endif
 #endif
 
   cudaFree(d_data);
