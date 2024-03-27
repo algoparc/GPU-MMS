@@ -77,7 +77,7 @@ __device__ void warp_partition(T* data, int* tempPivots, int size, int warpsPerT
     for (int i=0; i<L; i++) {
       left[i] = -1;
       if (edgeCaseTaskSize > 0) {
-        right[i] = (edgeCaseTaskSize > size-1) ? size-1 : edgeCaseTaskSize;
+        right[i] = (edgeCaseTaskSize > size) ? size : edgeCaseTaskSize;
       } else {
         right[i] = 0;
       }

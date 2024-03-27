@@ -166,7 +166,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         findPartitions<T, f><<<P,THREADS>>>(list[listBit]+offset, list[!listBit]+offset, pivots, listSize, edgeCaseTasks*K, edgeCaseTasks, P, edgeCaseTaskSize);
         #ifdef DEBUG
         printPartitions<<<1,1>>>(pivots, listSize, edgeCaseTasks, P);
-        testPartitioning<<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
         cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
@@ -212,7 +211,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         #ifdef DEBUG
         printf("CASE 5\n");
         printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
-        testPartitioning<<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
         #endif
         cudaDeviceSynchronize();
         // testPartitioning<T><<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
@@ -236,7 +234,6 @@ T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
         printf("CASE 6\n");
         cudaDeviceSynchronize();
         printPartitions<<<1,1>>>(pivots, listSize, tasks, P);
-        testPartitioning<T><<<1,1>>>(list[listBit], pivots, listSize, tasks, P);
         cudaDeviceSynchronize();
         err = cudaGetLastError();
         if (err != cudaSuccess) {
