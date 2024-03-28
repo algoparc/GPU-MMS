@@ -483,10 +483,10 @@ __global__ void findPartitions(T* data, int* pivots, int size, int tasks, int ed
   }
 }
 
-void __global__ printPartitions(int* pivots, int blocks) {
+void __global__ printPartitions(int* pivots, int mergers) {
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     printf("-----------------------------------------------------------------------\n");
-    for (int i=0; i<K*blocks+K; i++) {
+    for (int i=0; i<K*mergers+K; i++) {
       printf("%d ", pivots[i]);
     }
     printf("\n");
