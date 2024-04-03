@@ -12,9 +12,22 @@ void create_random_list(T* data, int size);
 
 struct IntegerComparator {
     __host__ __device__ bool operator()(int a, int b) const {
-        return ((((int)a)+(int)(a>>32)) <= (((int)b)+(int)(b>>32)));
+        return 4*a <= 1000 + b - a;
     }
 };
+
+template<typename T>
+void create_random_list(T* data, int size) {
+  long temp;
+//printf("size:%d\n", size);
+  for(int i=0; i<size; i++) {
+//    data[i].key = rand()%RANGE + min;
+//    data[i].val = rand()%RANGE + min;
+    data[i] = (rand()%RANGE);
+    temp = rand()%RANGE;
+    data[i] += (temp<<32);
+  }
+}
 
 int main(int argc, char ** argv) {
     cudaEvent_t start, stop;
@@ -26,6 +39,8 @@ int main(int argc, char ** argv) {
     int N = atoi(argv[1]);
     // Host vector of integers
     int* h_array = (int*) malloc(N * sizeof(int));
+
+    create_random_list<int>(h_array, N);
 
     // Copy the host array to device
     thrust::device_vector<int> d_vec(h_array, h_array + N);
