@@ -198,7 +198,7 @@ void test_multimergesort(int N)
   bool error = false;
   int erroneous_index;
   for (int i = 1; i < N; i++){
-    if (h_data[i] < h_data[i - 1]){
+    if (host_cmp(h_data[i], h_data[i - 1])){
       error = true;
       erroneous_index = i;
       break;

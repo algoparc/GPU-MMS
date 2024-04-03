@@ -16,13 +16,13 @@
  */
 
 #define BLOCKS 738
-#define K 32 // Branching factor (lists merged per round)
-#define PL 5 // Log of K
+#define K 4 // Branching factor (lists merged per round)
+#define PL 2 // Log of K
 #define PIPELINE // Define pipeline
 #define PIVOT_MOVES 2 // Determines the partitioning scheme; whether we move 2 pivots or 1 pivot with each step of the partition
 
 #ifdef PIPELINE
-#define THREADS (W*PL) // W*PL // Threads per block
+#define THREADS (W*(PL+2)) // W*PL // Threads per block
 #else
 #define THREADS 32
 #endif
@@ -32,7 +32,7 @@
 #define LOGW 5
 #define B 32
 #define LOGB 5
-#define RANGE 1048576 // Range of randomly generated values
+#define RANGE 1024 // Range of randomly generated values
 #define ELTS 32
 #define M 1024 // Size of base case
 #define FULL_MASK 0xFFFFFFFF // Full mask used for sync mask parameter

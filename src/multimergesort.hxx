@@ -56,7 +56,7 @@ __global__ void print_count() {
 template<typename T, fptr_t f>
 T* multimergesort(T* input, T* output, T* h_data, int N) {
   int* pivots;
-  int pivotsMemorySize = 2 * sizeof(int) * K * (1 + (N+M*K-1)/M/K);
+  int pivotsMemorySize = sizeof(int) * K * (1 + (N+M*K-1)/M/K);
   cudaError_t err;
   cudaMalloc((void**) &pivots, pivotsMemorySize);
   int tasks;
@@ -107,6 +107,8 @@ T* multimergesort(T* input, T* output, T* h_data, int N) {
       findPartitions<T,f><<<launchBlocks,THREADS>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
       multimergeLevel<T,f><<<launchBlocks,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks);
     }
+    err = cudaGetLastError();
+    printf("%s\n", cudaGetErrorString(err));
     listBit = !listBit; // Switch input/output arrays
   }
 

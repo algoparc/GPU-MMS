@@ -305,13 +305,14 @@ __device__ void buildHeap(T* input, T* heap, int* start, int* end, int size, int
 // Merge K lists. The first PL warps are responsible for a merger. The PL+1'th warp outputs, and the PL+2'th warp inputs
 template<typename T, fptr_t f>
 __device__ void multimergePipeline(T* input, T* output, int* start, int* end, int size, int outputOffset) {
-  __shared__ T heap[B*(2*K-1)]; // Each warp in the block needs its own shared memory
+  __shared__ T heap[B*(2*K-1)];
 
   int warpIdx = threadIdx.x/W;
   int path[PL+1];
   int tid = threadIdx.x%W;
-  int outputIdx=threadIdx.x+outputOffset;
+  int outputIdx=tid+outputOffset;
   int nodeIdx;
+  T tmp;
   T elts[2];
 
   // Have a single warp build the heap -- any warp can do this
@@ -320,36 +321,37 @@ __device__ void multimergePipeline(T* input, T* output, int* start, int* end, in
   }
   __syncthreads();
 
-
   while(heap[B-1] != MAXVAL) {
-    if (warpIdx == 0) {
-      output[outputIdx] = heap[threadIdx.x];
+    if (warpIdx == PL) {
+      tmp = heap[tid];
+    } else {
+      // Read from the buffers
+      nodeIdx = fillPath<T,f>(elts, heap, path, warpIdx<PL);
     }
-    outputIdx += B;
-    __syncthreads();
 
-    // Read from the buffers
-    nodeIdx = fillPath<T,f>(elts, heap, path, warpIdx<PL);
 
     __syncthreads();
-    if (warpIdx < PL) {
+    if (warpIdx == PL) {
+      output[outputIdx] = tmp;
+      outputIdx += B;
+    } else if (warpIdx < PL) {
       xorMergeGeneral<T,f>(elts, heap);
 
       heap[(path[warpIdx]<<5)+tid] = elts[0];
       heap[((path[warpIdx+1]-1+((path[warpIdx+1]&1)<<1))<<5)+tid] = elts[1];
-    }
-    if (warpIdx == THREADS/W - 1) {
+    } else if (warpIdx == PL + 1) {
       int tid = threadIdx.x%W;
       // getPath<T,f>(heap, path);
       // nodeIdx = path[PL];
       fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
     }
+    __syncthreads();
   }
 
   __syncthreads();
 
-  if(threadIdx.x < W && heap[threadIdx.x] != MAXVAL) {
-    output[outputIdx] = heap[threadIdx.x];
+  if(warpIdx == PL && heap[tid] != MAXVAL) {
+    output[outputIdx] = heap[tid];
   }
 
 }
