@@ -15,7 +15,7 @@
  *
  */
 
-// #define DEBUG
+#define DEBUG
 #define ITERS 1 // Number of iterations to compute average runtime
 
 #include <stdio.h>

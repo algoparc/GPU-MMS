@@ -155,19 +155,6 @@ __forceinline__ __device__ int findNodeInPath(T* heap, int nodeGroup, int LOGK) 
   return nodeIdx;
 }
 
-template<typename T>
-__forceinline__ __device__ int fillRegsFromPathBit(T* elts, T* heap, int tid) {
-  int path=1;
-#pragma unroll
-  for(int i=0; i<PL<<1; i+=2) {
-    path = path << 1;
-    elts[i] = heap[(path-1)*B+tid];
-    elts[i+1] = heap[(path)*B+tid];
-    path += (heap[(path-1)*B+(B-1)] > heap[(path)*B+(B-1)]);
-  }
-  return path;
-}
-
 /*
   Finds the path of the pipeline, and loads values into registers. For each thread, two values
   are read, which are a single element of the left child and right child of the node that is
@@ -175,13 +162,23 @@ __forceinline__ __device__ int fillRegsFromPathBit(T* elts, T* heap, int tid) {
 */
 
 template<typename T, fptr_t f>
-__forceinline__ __device__ void findPath(T* elts, T* heap, int* path) {
+__forceinline__ __device__ int fillPath(T* elts, T* heap, int* path, int fill) {
   path[0]=0;
   for (int i=0; i<PL; i++) {
-    if (i == threadIdx.x/32) {
+    if (i == threadIdx.x/32 && fill) {
       elts[0] = heap[((2*path[i]+1)<<LOGB)+threadIdx.x%32];
       elts[1] = heap[((2*path[i]+2)<<LOGB)+(B-1)-threadIdx.x%32];
     }
+    path[i+1] = path[i]*2+1;
+    path[i+1] += !f(heap[(path[i+1]<<LOGB)+(B-1)], heap[((path[i+1]+1)<<LOGB)+(B-1)]);
+  }
+  return path[PL];
+}
+
+template<typename T, fptr_t f>
+__forceinline__ __device__ void getPath(T* heap, int* path) {
+  path[0]=0;
+  for (int i=0; i<PL; i++) {
     path[i+1] = path[i]*2+1;
     path[i+1] += !f(heap[(path[i+1]<<LOGB)+(B-1)], heap[((path[i+1]+1)<<LOGB)+(B-1)]);
   }
@@ -245,7 +242,7 @@ __device__ int heapifyEmptyNodePipeline(T* heap, int* path) {
   T elts[2];
   int warpIdx = threadIdx.x/W;
   int tid = threadIdx.x%W;
-  findPath<T,f>(elts, heap, path);
+  fillPath<T,f>(elts, heap, path);
 
   __syncthreads();
 
@@ -305,34 +302,48 @@ __device__ void buildHeap(T* input, T* heap, int* start, int* end, int size, int
   }
 }
 
-// Merge K lists into one using 1 warp
+// Merge K lists. The first PL warps are responsible for a merger. The PL+1'th warp outputs, and the PL+2'th warp inputs
 template<typename T, fptr_t f>
 __device__ void multimergePipeline(T* input, T* output, int* start, int* end, int size, int outputOffset) {
   __shared__ T heap[B*(2*K-1)]; // Each warp in the block needs its own shared memory
 
+  int warpIdx = threadIdx.x/W;
   int path[PL+1];
+  int tid = threadIdx.x%W;
+  int outputIdx=threadIdx.x+outputOffset;
+  int nodeIdx;
+  T elts[2];
 
-  if (threadIdx.x < W) {
-    buildHeap<T,f>(input, heap, start, end, size, threadIdx.x);
+  // Have a single warp build the heap -- any warp can do this
+  if (warpIdx == 0) {
+    buildHeap<T,f>(input, heap, start, end, size, tid);
   }
   __syncthreads();
 
-  int outputIdx=threadIdx.x+outputOffset;
-  int nodeIdx;
 
   while(heap[B-1] != MAXVAL) {
-    if (threadIdx.x < W) {
+    if (warpIdx == 0) {
       output[outputIdx] = heap[threadIdx.x];
     }
     outputIdx += B;
     __syncthreads();
-    nodeIdx = heapifyEmptyNodePipeline<T,f>(heap, path);
-    
-    if (threadIdx.x/W == THREADS/W - 1) {
+
+    // Read from the buffers
+    nodeIdx = fillPath<T,f>(elts, heap, path, warpIdx<PL);
+
+    __syncthreads();
+    if (warpIdx < PL) {
+      xorMergeGeneral<T,f>(elts, heap);
+
+      heap[(path[warpIdx]<<5)+tid] = elts[0];
+      heap[((path[warpIdx+1]-1+((path[warpIdx+1]&1)<<1))<<5)+tid] = elts[1];
+    }
+    if (warpIdx == THREADS/W - 1) {
       int tid = threadIdx.x%W;
+      // getPath<T,f>(heap, path);
+      // nodeIdx = path[PL];
       fillEmptyLeaf<T>(input, heap, nodeIdx-(K-1), start, end, size, tid);
     }
-    
   }
 
   __syncthreads();

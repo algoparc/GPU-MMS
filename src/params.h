@@ -15,16 +15,16 @@
  *
  */
 
-#define BLOCKS 900
-#define K 4 // Branching factor (lists merged per round)
-#define PL 2 // Log of K
-// #define PIPELINE // Define pipeline
+#define BLOCKS 738
+#define K 32 // Branching factor (lists merged per round)
+#define PL 5 // Log of K
+#define PIPELINE // Define pipeline
 #define PIVOT_MOVES 2 // Determines the partitioning scheme; whether we move 2 pivots or 1 pivot with each step of the partition
 
 #ifdef PIPELINE
 #define THREADS (W*PL) // W*PL // Threads per block
 #else
-#define THREADS 128
+#define THREADS 32
 #endif
 
 #define THREADS_BASE_CASE 32

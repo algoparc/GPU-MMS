@@ -75,9 +75,6 @@ T* multimergesort(T* input, T* output, T* h_data, int N) {
 
 // Sort the base case into blocks of 1024 elements each
   squareSort<T,f><<<baseBlocks,THREADS_BASE_CASE>>>(input, N);
-  cudaDeviceSynchronize();
-  err = cudaGetLastError();
-      printf("%s\n", cudaGetErrorString(err));
 
 /*
   Perform successive merge rounds.
@@ -97,13 +94,7 @@ T* multimergesort(T* input, T* output, T* h_data, int N) {
       #else
       int launchBlocks = tasks/(THREADS/W);
       #endif
-      err = cudaGetLastError();
-      printf("%s\n", cudaGetErrorString(err));
-      findPartitions<T,f><<<launchBlocks,THREADS>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
-      cudaDeviceSynchronize();
-      err = cudaGetLastError();
-      printf("%s\n", cudaGetErrorString(err));
-      printPartitions<<<1,1>>>(pivots, P);
+      findPartitions<T,f><<<launchBlocks,W>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
       multimergeLevel<T,f><<<launchBlocks,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks);
     }
     else {
@@ -114,13 +105,8 @@ T* multimergesort(T* input, T* output, T* h_data, int N) {
       int launchBlocks = P/(THREADS/W);
       #endif
       findPartitions<T,f><<<launchBlocks,THREADS>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
-      err = cudaGetLastError();
-      printf("%s\n", cudaGetErrorString(err));
-
-      printPartitions<<<1,1>>>(pivots, P);
       multimergeLevel<T,f><<<launchBlocks,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks);
     }
-    testSortedSegments<T,f><<<1,1>>>(list[!listBit], K*listSize, N);
     listBit = !listBit; // Switch input/output arrays
   }
 
