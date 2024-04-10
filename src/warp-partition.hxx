@@ -25,11 +25,123 @@
 #include<algorithm>
 #include "params.h"
 
+template<typename T>
+struct pair {
+  T val;
+  int index;
 
+  pair(T v, int id) {
+    val = v;
+    index = id;
+  }
+};
+
+__forceinline__ __device__ int parent(int index) {
+  return (index-1)/2;
+}
+
+__forceinline__ __device__ int leftChild(int index) {
+  return 2*index+1;
+}
+
+__forceinline__ __device__ int rightChild(int index) {
+  return 2*index+2;
+}
 
 template<typename T, fptr_t f>
 __device__ int equals(T a, T b) {
   return !(f(a, b) ^ f(b, a));
+}
+
+template<typename T, fptr_t f>
+__device__ void heapifyUp(T* heap, int* heapIndices, int size, int index) {
+  T valSwap;
+  int indexSwap;
+  while (index>0 && f(heap[index], heap[parent(index)])) {
+    valSwap = heap[index];
+    heap[index] = heap[parent(index)];
+    heap[parent(index)] = heap[index];
+    
+    indexSwap = heapIndices[index];
+    heapIndices[index] = heapIndices[parent(index)];
+    heapIndices[parent(index)] = heapIndices[index];
+  }
+}
+
+template<typename T, fptr_t f>
+__device__ void heapifyDown(T* heap, int* heapIndices, int size, int index) {
+  T valSwap;
+  int indexSwap;
+
+  int done=0;
+  while (index<size && !done) {
+    if (rightChild(index) >= size) {
+      if (leftChild(index) >= size) {
+        done = 1;
+      } else if (f(heap[index], heap[leftChild(index)])) {
+        done=1;
+      } else {
+        valSwap = heap[index];
+        heap[index] = heap[leftChild(index)];
+        heap[leftChild(index)] = heap[index];
+        
+        indexSwap = heapIndices[index];
+        heapIndices[index] = heapIndices[leftChild(index)];
+        heapIndices[leftChild(index)] = heapIndices[index];
+
+        index = leftChild(index);
+      }
+    } else if (f(heap[leftChild(index)], heap[rightChild(index)])) {
+      if (f(heap[index], heap[leftChild(index)])) {
+        done=1;
+      } else {
+        valSwap = heap[index];
+        heap[index] = heap[leftChild(index)];
+        heap[leftChild(index)] = heap[index];
+        
+        indexSwap = heapIndices[index];
+        heapIndices[index] = heapIndices[leftChild(index)];
+        heapIndices[leftChild(index)] = heapIndices[index];
+
+        index = leftChild(index);
+      }
+    } else {
+      if (f(heap[index], heap[rightChild(index)])) {
+        done=1;
+      } else {
+        valSwap = heap[index];
+        heap[index] = heap[rightChild(index)];
+        heap[rightChild(index)] = heap[index];
+        
+        indexSwap = heapIndices[index];
+        heapIndices[index] = heapIndices[rightChild(index)];
+        heapIndices[rightChild(index)] = heapIndices[index];
+
+        index = rightChild(index);
+      }
+    }
+  }
+}
+
+template<typename T, fptr_t f>
+__forceinline__ __device__ void push(T* minHeap, int* heapIndices, int size, T value, int index) {
+  minHeap[size] = value;
+  heapIndices[size] = index;
+  heapifyUp<T,f>(size);
+  size++;
+}
+
+template<typename T, fptr_t f>
+pair<T> extractMin(T* minHeap, int* heapIndices, int size) {
+  T value = minHeap[0];
+  int intValue = heapIndices[0];
+  pair<T> returnVal(value, intValue);
+  size--;
+  minHeap[0] = minHeap[size];
+  heapIndices[0] = heapIndices[size];
+  heapifyDown<T,f>(0);
+  // Calculate or obtain values for 'value' and 'intValue'
+  return returnVal;
 }
 
 /*
@@ -59,25 +171,15 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
       tempPivots[tid] = 0;
     }
   } else if (tid == 0) {
-    long left[K];
-    long right[K];
-    long mid[K];
+    int left[K];
+    int right[K];
+    int mid[K];
     int completed[K];
-    T PQMaxVals[K];
-    int PQMaxIndices[K];
-    T PQMinVals[K];
-    int PQMinIndices[K];
     int totalCompleted=0;
     int L = (taskSize+size-1)/size;
     int sum=0;
     long target = mergerIdInTask*taskSize/mergersPerTask;
-    if (L == 1) {
-      tempPivots[0] = ((mergerIdInTask)*(taskSize/mergersPerTask));
-      for (int i=1; i<K; i++) {
-        tempPivots[i] = 0;
-      }
-      return;
-    }
+    taskSize--;
     for (int i=0; i<L; i++) {
       left[i] = -1;
       if (taskSize > 0) {
@@ -89,127 +191,35 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
       sum += mid[i];
       taskSize -= size;
       completed[i] = 0;
-      PQMaxVals[i] = data[size*i + mid[i]];
-      PQMaxIndices[i] = i;
-      PQMinVals[i] = data[size*i + mid[i]];
-      PQMinIndices[i] = i;
     }
-
-    //Build max-heap
-    T temp;
-    int idxTemp;
-    for (int i=(L-2)/2; i>=0; i--) {
-      //Max-Heapify
-      int j=i;
-      int done=0;
-      while (2*j+1 < L && !done) {
-        if (2*j+2 < L) {
-          if (f(PQMaxVals[2*j+1], PQMaxVals[2*j+2])) {
-            if (f(PQMaxVals[j], PQMaxVals[2*j+2])) {
-              temp = PQMaxVals[j];
-              PQMaxVals[j] = PQMaxVals[2*j+2];
-              PQMaxVals[2*j+2] = temp;
-
-              idxTemp = PQMaxIndices[j];
-              PQMaxIndices[j] = PQMaxIndices[2*j+2];
-              PQMaxIndices[2*j+2] = idxTemp;
-              j = 2*j+2;
-            } else {
-              done = 1;
-            }
-          } else {
-            if (f(PQMaxVals[j], PQMaxVals[2*j+1])) {
-              temp = PQMaxVals[i];
-              PQMaxVals[j] = PQMaxVals[2*j+1];
-              PQMaxVals[2*j+1] = temp;
-
-              idxTemp = PQMaxIndices[j];
-              PQMaxIndices[j] = PQMaxIndices[2*j+1];
-              PQMaxIndices[2*j+1] = idxTemp;
-              j = 2*j+1;
-            } else {
-              done = 1;
-            }
-          }
-        } else {
-          if (f(PQMaxVals[j], PQMaxVals[2*j+2])) {
-              temp = PQMaxVals[j];
-              PQMaxVals[j] = PQMaxVals[2*j+2];
-              PQMaxVals[2*j+2] = temp;
-
-              idxTemp = PQMaxIndices[j];
-              PQMaxIndices[j] = PQMaxIndices[2*j+2];
-              PQMaxIndices[2*j+2] = idxTemp;
-              j = 2*j+2;
-            } else {
-              done = 1;
-            }
-        }
-      }
-    }
-
-    // Build min-heap
-    for (int i=(L-2)/2; i>=0; i--) {
-      //Min-Heapify
-      int j=i;
-      int done=0;
-      while (2*j+1 < L && !done) {
-        if (2*j+2 < L) {
-          if (f(PQMinVals[2*j+2], PQMinVals[2*j+1])) {
-            if (f(PQMinVals[2*j+2], PQMinVals[j])) {
-              temp = PQMinVals[j];
-              PQMinVals[j] = PQMinVals[2*j+2];
-              PQMinVals[2*j+2] = temp;
-
-              idxTemp = PQMinIndices[j];
-              PQMinIndices[j] = PQMinIndices[2*j+2];
-              PQMinIndices[2*j+2] = idxTemp;
-              j = 2*j+2;
-            } else {
-              done = 1;
-            }
-          } else {
-            if (f(PQMinVals[2*j+1], PQMinVals[j])) {
-              temp = PQMinVals[j];
-              PQMinVals[j] = PQMinVals[2*j+1];
-              PQMinVals[2*j+1] = temp;
-
-              idxTemp = PQMinIndices[j];
-              PQMinIndices[j] = PQMinIndices[2*j+1];
-              PQMinIndices[2*j+1] = idxTemp;
-              j = 2*j+1;
-            } else {
-              done = 1;
-            }
-          }
-        } else {
-          if (f(PQMinVals[2*j+1], PQMinVals[j])) {
-            temp = PQMinVals[j];
-            PQMinVals[j] = PQMinVals[2*j+1];
-            PQMinVals[2*j+1] = temp;
-
-            idxTemp = PQMinIndices[j];
-            PQMinIndices[j] = PQMinIndices[2*j+1];
-            PQMinIndices[2*j+1] = idxTemp;
-            j = 2*j+1;
-          } else {
-            done = 1;
-          } 
-        }
-      }
-    }
-
 
     int idx=0;
 
     while (totalCompleted < L-1) {
+      int firstIndex;
+      for (int i=L-1; i>=0; i--) {
+        if (!completed[i]) {
+          firstIndex = i;
+        }
+      }
+      T val = data[size*firstIndex + mid[firstIndex]];
       int moveMax = sum >= target;
+      idx = firstIndex;
+      for (int i=1; i<L; i++) {
+        if (!completed[i]) {
+          if (moveMax && (equals<T,f>(val, data[size*i + mid[i]]) || f(val, data[size*i + mid[i]]))) {
+            idx = i;
+            val = data[size*i + mid[i]];
+          } else if (!moveMax && f(data[size*i + mid[i]], val)) {
+            idx = i;
+            val = data[size*i + mid[i]];
+          }
+        }
+      }
       
       if (moveMax) {
-        idx = PQMaxIndices[0];
         right[idx] = mid[idx];
       } else {
-        idx = PQMinIndices[0];
         left[idx] = mid[idx];
       }
       sum -= mid[idx];
@@ -220,85 +230,9 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
         totalCompleted++;
         completed[idx] = 1;
         sum++; // Add 1 to sum, because mid currently equals left, and we return right[];
-        if (moveMax) {
-          PQMaxIndices[0] = PQMaxIndices[L-totalCompleted];
-          PQMaxVals[0] = PQMaxVals[L-totalCompleted];
-        } else {
-          PQMinIndices[0] = PQMinIndices[L-totalCompleted];
-          PQMinVals[0] = PQMinVals[L-totalCompleted];
-        }
-      } else {
-        if (moveMax) {
-          PQMaxVals[0] = data[size*idx + mid[idx]];
-          int done = 0;
-          int j=0;
-          while (2*j+1 < L-totalCompleted && !done) {
-            if (2*j+2 < L-totalCompleted) {
-              if (f(PQMaxVals[2*j+1], PQMaxVals[2*j+2])) {
-                if (f(PQMaxVals[j], PQMaxVals[2*j+2])) {
-                  temp = PQMaxVals[j];
-                  PQMaxVals[j] = PQMaxVals[2*j+2];
-                  PQMaxVals[2*j+2] = temp;
-
-                  idxTemp = PQMaxIndices[j];
-                  PQMaxIndices[j] = PQMaxIndices[2*j+2];
-                  PQMaxIndices[2*j+2] = idxTemp;
-                  j = 2*j+2;
-                } else {
-                  done = 1;
-                }
-              } else {
-                if (f(PQMaxVals[j], PQMaxVals[2*j+1])) {
-                  temp = PQMaxVals[j];
-                  PQMaxVals[j] = PQMaxVals[2*j+1];
-                  PQMaxVals[2*j+1] = temp;
-
-                  idxTemp = PQMaxIndices[j];
-                  PQMaxIndices[j] = PQMaxIndices[2*j+1];
-                  PQMaxIndices[2*j+1] = idxTemp;
-                  j = 2*j+1;
-                } else {
-                  done = 1;
-                }
-              }
-            }
-          }
-        } else {
-          PQMinVals[0] = data[size*idx + mid[idx]];
-          int done = 0;
-          int j=0;
-          while (2*j+1 < L-totalCompleted && !done) {
-            if (2*j+2 < L-totalCompleted) {
-              if (f(PQMinVals[2*j+2], PQMinVals[2*j+1])) {
-                if (f(PQMinVals[2*j+2], PQMinVals[j])) {
-                  temp = PQMinVals[j];
-                  PQMinVals[j] = PQMinVals[2*j+2];
-                  PQMinVals[2*j+2] = temp;
-
-                  idxTemp = PQMinIndices[j];
-                  PQMinIndices[j] = PQMinIndices[2*j+2];
-                  PQMinIndices[2*j+2] = idxTemp;
-                  j = 2*j+2;
-                } else {
-                  done = 1;
-                }
-              } else {
-                if (f(PQMinVals[2*j+1], PQMinVals[j])) {
-                  temp = PQMinVals[j];
-                  PQMinVals[j] = PQMinVals[2*j+1];
-                  PQMinVals[2*j+1] = temp;
-
-                  idxTemp = PQMinIndices[j];
-                  PQMinIndices[j] = PQMinIndices[2*j+1];
-                  PQMinIndices[2*j+1] = idxTemp;
-                  j = 2*j+1;
-                } else {
-                  done = 1;
-                }
-              }
-            }
-          }
-        }
+      } else if (left[idx] + 1 > right[idx]) {
+        printf("LOOP INVARIANT VIOLATED! LEFT[IDX] + 1 > RIGHT[IDX]\n");
+        return;
       }
     }
 

@@ -104,11 +104,9 @@ T* multimergesort(T* input, T* output, T* h_data, int N) {
       #else
       int launchBlocks = P/(THREADS/W);
       #endif
-      findPartitions<T,f><<<launchBlocks,THREADS>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
+      findPartitions<T,f><<<launchBlocks,W>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
       multimergeLevel<T,f><<<launchBlocks,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks);
     }
-    err = cudaGetLastError();
-    printf("%s\n", cudaGetErrorString(err));
     listBit = !listBit; // Switch input/output arrays
   }
 

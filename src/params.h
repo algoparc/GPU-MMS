@@ -16,9 +16,9 @@
  */
 
 #define BLOCKS 738
-#define K 4 // Branching factor (lists merged per round)
-#define PL 2 // Log of K
-#define PIPELINE // Define pipeline
+#define K 32 // Branching factor (lists merged per round)
+#define PL 5 // Log of K
+// #define PIPELINE // Define pipeline
 #define PIVOT_MOVES 2 // Determines the partitioning scheme; whether we move 2 pivots or 1 pivot with each step of the partition
 
 #ifdef PIPELINE
