@@ -12,7 +12,7 @@ void create_random_list(T* data, int size);
 
 struct IntegerComparator {
     __host__ __device__ bool operator()(int a, int b) const {
-        return 4*a <= 1000 + b - a;
+        return a*a-1 <= b*b+2;
     }
 };
 
@@ -59,7 +59,7 @@ int main(int argc, char ** argv) {
   printf("%f\n", time_elapsed);
 
     // Copy the sorted device vector back to host
-    thrust::copy(d_vec.begin(), d_vec.end(), h_array);
+    // thrust::copy(d_vec.begin(), d_vec.end(), h_array);
     
 
     return 0;

@@ -25,123 +25,138 @@
 #include<algorithm>
 #include "params.h"
 
+// order = 0 indicates smallest value, order = L-1 indicates largest
 template<typename T>
-struct pair {
+struct Pair {
+  int order;
   T val;
-  int index;
-
-  pair(T v, int id) {
-    val = v;
-    index = id;
-  }
 };
-
-__forceinline__ __device__ int parent(int index) {
-  return (index-1)/2;
-}
-
-__forceinline__ __device__ int leftChild(int index) {
-  return 2*index+1;
-}
-
-__forceinline__ __device__ int rightChild(int index) {
-  return 2*index+2;
-}
 
 template<typename T, fptr_t f>
 __device__ int equals(T a, T b) {
   return !(f(a, b) ^ f(b, a));
 }
 
+// Old partitioning scheme
 template<typename T, fptr_t f>
-__device__ void heapifyUp(T* heap, int* heapIndices, int size, int index) {
-  T valSwap;
-  int indexSwap;
-  while (index>0 && f(heap[index], heap[parent(index)])) {
-    valSwap = heap[index];
-    heap[index] = heap[parent(index)];
-    heap[parent(index)] = heap[index];
-    
-    indexSwap = heapIndices[index];
-    heapIndices[index] = heapIndices[parent(index)];
-    heapIndices[parent(index)] = heapIndices[index];
+__device__ void old_partition(T* data, int* tempPivots, long size, int mergersPerTask, int mergerIdInTask, long taskSize) {
+  const int WARPS = THREADS/W;
+  int tid = threadIdx.x%W;
+  int warpInBlock = threadIdx.x/W;
+  int targetPivot = ((mergerIdInTask)*((taskSize)/mergersPerTask));
+  T minVal,maxVal;
+  int minIdx, maxIdx;
+
+  __shared__ T candidates[K*WARPS];
+  __shared__ int partitionVal[WARPS];
+
+  if(threadIdx.x < WARPS) {
+    partitionVal[threadIdx.x] = (size*K)/2;
   }
-}
 
-template<typename T, fptr_t f>
-__device__ void heapifyDown(T* heap, int* heapIndices, int size, int index) {
-  T valSwap;
-  int indexSwap;
+ volatile  __shared__ int startBoundary[K*WARPS];
+ volatile  __shared__ int endBoundary[K*WARPS];
 
-  int done=0;
-  while (index<size && !done) {
-    if (rightChild(index) >= size) {
-      if (leftChild(index) >= size) {
-        done = 1;
-      } else if (f(heap[index], heap[leftChild(index)])) {
-        done=1;
-      } else {
-        valSwap = heap[index];
-        heap[index] = heap[leftChild(index)];
-        heap[leftChild(index)] = heap[index];
-        
-        indexSwap = heapIndices[index];
-        heapIndices[index] = heapIndices[leftChild(index)];
-        heapIndices[leftChild(index)] = heapIndices[index];
+  // Initialize boundary positions
+  if(threadIdx.x < K*WARPS) {
+    startBoundary[threadIdx.x] = 0;
+    endBoundary[threadIdx.x] = size-1;
+    tempPivots[tid] = size/2;
+  }
 
-        index = leftChild(index);
+// first warp of task begins at start of every list
+  if(mergerIdInTask == 0 && tid < K) {
+    tempPivots[tid] = 0;
+  }
+
+__syncthreads();
+
+// find min and max elts of list
+  if(mergerIdInTask > 0) {
+    // Set initial candidate values
+    if(tid < K) {
+      candidates[warpInBlock*K+tid] = data[size*tid + tempPivots[tid]];
+    }
+
+    __shared__ T partVal[THREADS/W];
+    __shared__ int partList[THREADS/W];
+// Sequential section per warp 
+    if(tid==0) {
+      partVal[warpInBlock]=MAXVAL;
+      int tempPartitionVal;
+      int iterIdx;
+      minVal=0;
+      maxVal=1;
+
+      while(partVal[warpInBlock] == MAXVAL) {
+      minVal=MAXVAL;
+      maxVal=MINVAL;
+        // find min and max - OPTIMIZE use K threads to do min and max reduction
+        for(int i=0; i<K; i++) {
+          iterIdx = warpInBlock*K + i;
+          if(f(candidates[iterIdx], minVal) && tempPivots[i] < size-1) {
+            minVal = candidates[iterIdx];
+            minIdx = i;
+          }
+          if(f(maxVal, candidates[iterIdx]) && tempPivots[i] > 0) {
+            maxVal = candidates[iterIdx];
+            maxIdx = i;
+          }
+        }
+// Move min and/or max candidates based on target order statistic
+        tempPartitionVal = partitionVal[warpInBlock];
+
+          // If we need to move min candidate
+        if(targetPivot >= tempPartitionVal) {
+          partitionVal[warpInBlock] += (endBoundary[warpInBlock*K + minIdx] - tempPivots[minIdx])/2; // Increase rank of current partition boundary
+          startBoundary[warpInBlock*K + minIdx] = tempPivots[minIdx];
+          tempPivots[minIdx]=(endBoundary[warpInBlock*K+minIdx]+startBoundary[warpInBlock*K+minIdx])/2;
+          if(tempPivots[minIdx] == startBoundary[warpInBlock*K + minIdx]) { // Edge case
+            tempPivots[minIdx]++; 
+            partitionVal[warpInBlock]++;
+          }
+          candidates[warpInBlock*K + minIdx] = data[size*minIdx + tempPivots[minIdx]];
+          if(startBoundary[warpInBlock*K + minIdx] >= endBoundary[warpInBlock*K + minIdx] && tempPivots[minIdx] < size-1) 
+//          {
+            partVal[warpInBlock] = candidates[warpInBlock*K + minIdx];
+            partList[warpInBlock] = minIdx;
+//          }
+        } 
+        else { // If we need to move max candidate
+          partitionVal[warpInBlock] -= (tempPivots[maxIdx] - startBoundary[warpInBlock*K + maxIdx])/2; // Increase rank of current partition boundary
+          endBoundary[warpInBlock*K + maxIdx] = tempPivots[maxIdx];
+          tempPivots[maxIdx]=(endBoundary[warpInBlock*K+maxIdx]+startBoundary[warpInBlock*K+maxIdx])/2;
+          candidates[warpInBlock*K + maxIdx] = data[size*maxIdx + tempPivots[maxIdx]];
+          if(startBoundary[warpInBlock*K + maxIdx] >= endBoundary[warpInBlock*K + maxIdx] && tempPivots[maxIdx] > 0) 
+ //         {
+            partVal[warpInBlock] = candidates[warpInBlock*K + maxIdx];
+            partList[warpInBlock] = maxIdx;
+          }
+        }
       }
-    } else if (f(heap[leftChild(index)], heap[rightChild(index)])) {
-      if (f(heap[index], heap[leftChild(index)])) {
-        done=1;
-      } else {
-        valSwap = heap[index];
-        heap[index] = heap[leftChild(index)];
-        heap[leftChild(index)] = heap[index];
-        
-        indexSwap = heapIndices[index];
-        heapIndices[index] = heapIndices[leftChild(index)];
-        heapIndices[leftChild(index)] = heapIndices[index];
+      // Binary search each other list to find predecessor of partitioning value
+      __syncthreads();
 
-        index = leftChild(index);
-      }
-    } else {
-      if (f(heap[index], heap[rightChild(index)])) {
-        done=1;
-      } else {
-        valSwap = heap[index];
-        heap[index] = heap[rightChild(index)];
-        heap[rightChild(index)] = heap[index];
-        
-        indexSwap = heapIndices[index];
-        heapIndices[index] = heapIndices[rightChild(index)];
-        heapIndices[rightChild(index)] = heapIndices[index];
+      int step;
+      if(tid < K) {
+        if(tid != partList[warpInBlock]) {
+          tempPivots[tid] = size/2;
+          step = size/4;
 
-        index = rightChild(index);
+          while(step >= 1) {
+            if(!f((data[size*tid + tempPivots[tid]]), partVal[warpInBlock])) 
+              tempPivots[tid] -= step;
+            else 
+              tempPivots[tid] += step;
+            step /=2;
+          }
+          if(tempPivots[tid] > 0 && cmp(partVal[warpInBlock], (data[size*tid + tempPivots[tid]-1])))
+            tempPivots[tid]--;
+          if(f((data[size*tid + tempPivots[tid]]), partVal[warpInBlock]))
+            tempPivots[tid]++;
+        }
       }
     }
-  }
-}
-
-template<typename T, fptr_t f>
-__forceinline__ __device__ void push(T* minHeap, int* heapIndices, int size, T value, int index) {
-  minHeap[size] = value;
-  heapIndices[size] = index;
-  heapifyUp<T,f>(size);
-  size++;
-}
-
-template<typename T, fptr_t f>
-pair<T> extractMin(T* minHeap, int* heapIndices, int size) {
-  T value = minHeap[0];
-  int intValue = heapIndices[0];
-  pair<T> returnVal(value, intValue);
-  size--;
-  minHeap[0] = minHeap[size];
-  heapIndices[0] = heapIndices[size];
-  heapifyDown<T,f>(0);
-  // Calculate or obtain values for 'value' and 'intValue'
-  return returnVal;
 }
 
 /*
@@ -170,83 +185,198 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
     if (tid < K) {
       tempPivots[tid] = 0;
     }
-  } else if (tid == 0) {
-    int left[K];
-    int right[K];
-    int mid[K];
-    int completed[K];
-    int totalCompleted=0;
+  } else {
     int L = (taskSize+size-1)/size;
-    int sum=0;
-    long target = mergerIdInTask*taskSize/mergersPerTask;
-    taskSize--;
-    for (int i=0; i<L; i++) {
-      left[i] = -1;
-      if (taskSize > 0) {
-        right[i] = (taskSize > size) ? size : taskSize;
-      } else {
-        right[i] = 0;
+
+    if (tid<L) {
+      unsigned int ballot = __ballot_sync(FULL_MASK, tid<L);
+      Pair<T> myPair;
+      int left;
+      int right;
+      int mid;
+      int completed;
+      __shared__ int totalCompleted;
+      __shared__ int sum;
+      __shared__ T values[K];
+      int mySum;
+      long target = mergerIdInTask*taskSize/mergersPerTask;
+      taskSize--;
+
+      totalCompleted=0;
+      sum=0;
+
+      if (tid < L) {
+        left = -1;
+        right = (taskSize-tid*size > size) ? size : taskSize-tid*size;
+        mid = right/2;
+        completed = 0;
+        mySum = mid;
       }
-      mid[i] = right[i]/2;
-      sum += mid[i];
-      taskSize -= size;
-      completed[i] = 0;
-    }
 
-    int idx=0;
+      // Use kogge-stone to get sum
+      int shift=1;
+      int neighbor;
+      for (int i=0; i<PL; i++) {
+        neighbor = __shfl_up_sync(ballot, mySum, shift);
+        if (tid - shift >= 0) {
+          mySum += neighbor;
+        }
+        shift *= 2;
+      }
+      if (tid == L-1) {
+        sum = mySum;
+      }
+      __syncwarp(ballot);
 
-    while (totalCompleted < L-1) {
-      int firstIndex;
-      for (int i=L-1; i>=0; i--) {
-        if (!completed[i]) {
-          firstIndex = i;
+      if (blockIdx.x == 1 && tid == 0)
+        printf("sum: %d\n", sum);
+      // Finished getting sum
+
+
+      // Sort all the elements, by assigning a value to the "order" field. valExchange
+      T val = data[size*tid + mid];
+      int order = tid;
+      values[tid] = val;
+
+      __syncwarp(ballot);
+
+      int delta=1;
+      for (int i=0; i<PL; i++) {
+        delta*=2;
+        int direction = ((order / delta) % 2 == 0);
+        for (int j=delta; j>1; j /= 2) {
+            // Direction indicates the direction in which it is sorted. 1=increasing, 0=decreasing
+            // Higher indicates whether the particular thread should contain the higher or lower element.
+            int higher = ((order % j) < j/2) ^ direction;
+            // Exchange with the thread that has ID that is XOR with j/2 of mine. Since XOR is the same forwards as backwards, the opposite thread gets my ID, too.
+            int partner = order ^ (j/2);
+            __syncwarp(ballot);
+            T myVal = values[order];
+            __syncwarp(ballot);
+            if (partner<L && !equals<T,f>(myVal, values[partner]) && (!higher ^ f(myVal, values[partner]))) {
+              values[partner] = myVal;
+              order = partner;
+            }
+            __syncwarp(ballot);
         }
       }
-      T val = data[size*firstIndex + mid[firstIndex]];
-      int moveMax = sum >= target;
-      idx = firstIndex;
-      for (int i=1; i<L; i++) {
-        if (!completed[i]) {
-          if (moveMax && (equals<T,f>(val, data[size*i + mid[i]]) || f(val, data[size*i + mid[i]]))) {
-            idx = i;
-            val = data[size*i + mid[i]];
-          } else if (!moveMax && f(data[size*i + mid[i]], val)) {
-            idx = i;
-            val = data[size*i + mid[i]];
+
+      // moveMax is true if we move the max pivot. The thread that moves the pivot has active as 1 and inactive as 0.
+      int moveMax;
+      int active;
+      __shared__ T temp;
+      __shared__ int readjust;
+      __shared__ int startOffset;
+      __shared__ int endOffset;
+      __shared__ unsigned int activeThreadBit;
+
+      startOffset=0;
+      endOffset=0;
+
+      __syncwarp(ballot);
+
+      while (totalCompleted < L-1) {
+        moveMax = (sum >= target) ? 1 : 0;
+        active = (moveMax && order == L-1-endOffset) || (!moveMax && order == startOffset);
+
+        __syncwarp(ballot);
+
+        if (blockIdx.x == 1 && tid == 0) {
+          for (int i=0; i<L; i++) {
+            printf("%d ", values[i]);
+          }
+          printf("\n");
+        }
+
+        if (blockIdx.x == 1) {
+          for (int i=0; i<L; i++) {
+            if (tid == i) {
+              printf("%3d ", order);
+            }
+            __syncwarp(ballot);
           }
         }
-      }
-      
-      if (moveMax) {
-        right[idx] = mid[idx];
-      } else {
-        left[idx] = mid[idx];
-      }
-      sum -= mid[idx];
-      mid[idx] = (left[idx]+right[idx])/2;
-      sum += mid[idx];
-      
-      if (left[idx] + 1 == right[idx]) {
-        totalCompleted++;
-        completed[idx] = 1;
-        sum++; // Add 1 to sum, because mid currently equals left, and we return right[];
-      } else if (left[idx] + 1 > right[idx]) {
-        printf("LOOP INVARIANT VIOLATED! LEFT[IDX] + 1 > RIGHT[IDX]\n");
-        return;
-      }
-    }
 
-    for (int i=0; i<K; i++) {
-      if (i<L) {
-        if (!completed[i]) {
-          mid[i] += target-sum;
-          tempPivots[i] = mid[i];
-        } else {
-          tempPivots[i] = right[i];
+        __syncwarp(ballot);
+
+        if (active) {
+          if (blockIdx.x == 1)
+            printf("\nmoveMax: %d, endOffset: %d, startOffset: %d\nactive thread: %d\n", moveMax, endOffset, startOffset, threadIdx.x);
+          if (moveMax) {
+            right = mid;
+          } else if (!moveMax) {
+            left = mid;
+          }
+          sum -= mid;
+          mid = (left+right)/2;
+          sum += mid;
+          if (blockIdx.x == 1) {
+            for (int i=startOffset; i<=L-1-endOffset; i++) {
+              printf("%d ", values[i]);
+            }
+            printf("\n");
+          }
+          if (left + 1 == right) {
+            totalCompleted++;
+            tempPivots[tid] = right;
+            sum++;
+            if (moveMax) {
+              endOffset++;
+            } else {
+              startOffset++;
+            }
+            readjust = 0;
+            return;
+          }
+          temp = data[size*tid + mid];
+          readjust = 1;
+          activeThreadBit = 2 << tid;
         }
-      } else {
-        tempPivots[i] = 0;
+
+        __syncwarp(ballot);
+        int newOrder=order;
+        if (readjust && !active) {
+          if (moveMax) {
+            T temporaryReadVal = values[order];
+            // unsigned mask = ballot ^ activeThreadBit;
+            __syncwarp(__activemask());
+            // if (blockIdx.x == 1) printf("|");
+            if (f(temp, values[order])) {
+              newOrder = order+1;
+              values[newOrder] = values[order];
+            }
+          } else {
+            T temporaryReadVal = values[order];
+            // unsigned mask = ballot ^ activeThreadBit;
+            __syncwarp(__activemask());
+            // if (blockIdx.x == 1) printf("|");
+            if (f(values[order], temp)) {
+              newOrder = order-1;
+              values[newOrder] = values[order];
+            }
+          }
+        }
+
+        __syncwarp(ballot);
+        int position = __builtin_popcountll(__ballot_sync(FULL_MASK, (!active && order != newOrder))); // Computes which threads have changed order. If 
+        // printf("position: %d\n", position);
+        if (readjust && active) {
+          if (moveMax) {
+            newOrder = L-1-endOffset-position;
+          } else {
+            newOrder=startOffset+position;
+          }
+          values[newOrder] = temp;
+        }
+
+        __syncwarp(ballot);
+        order = newOrder;
       }
+
+      mid += target-sum;
+      tempPivots[tid] = mid;
+    } else if (tid < K) {
+      tempPivots[tid] = 0;
     }
   }
 }
@@ -401,7 +531,7 @@ __global__ void findPartitions(T* data, int* pivots, int size, int tasks, int ed
     double_pivot_partition<T, f>(data+taskOffset, myPivots, size, mergersPerTask, mergerIdInTask, taskSize);
     #endif
     #else
-    single_pivot_partition<T, f>(data+taskOffset, myPivots, size, mergersPerTask, mergerIdInTask, taskSize);
+    old_partition<T, f>(data+taskOffset, myPivots, size, mergersPerTask, mergerIdInTask, taskSize);
     #endif
   }
 

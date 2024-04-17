@@ -15,7 +15,8 @@
  *
  */
 
-#define DEBUG
+// #define DEBUG
+#define TEST
 #define ITERS 1 // Number of iterations to compute average runtime
 
 #include <stdio.h>
@@ -194,7 +195,7 @@ void test_multimergesort(int N)
   cudaMemcpy(h_data, d_output, N * sizeof(T), cudaMemcpyDeviceToHost);
 
 // If debug mode is on, check that output is correct
-#ifdef DEBUG
+#ifdef TEST
   bool error = false;
   int erroneous_index;
   for (int i = 1; i < N; i++){
@@ -258,7 +259,7 @@ void test_squareSort(int N){
 
   cudaMemcpy(h_data, d_data, N * sizeof(T), cudaMemcpyDeviceToHost);
   cudaFree(d_data);
-#ifdef DEBUG
+#ifdef TEST
   bool sorted = true;
 
   int start_of_base_case;

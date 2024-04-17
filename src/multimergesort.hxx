@@ -55,9 +55,11 @@ __global__ void print_count() {
 */
 template<typename T, fptr_t f>
 T* multimergesort(T* input, T* output, T* h_data, int N) {
+  #ifdef DEBUG
+  cudaError_t err;
+  #endif
   int* pivots;
   int pivotsMemorySize = sizeof(int) * K * (1 + (N+M*K-1)/M/K);
-  cudaError_t err;
   cudaMalloc((void**) &pivots, pivotsMemorySize);
   int tasks;
   int edgeCaseTaskSize;
@@ -91,23 +93,45 @@ T* multimergesort(T* input, T* output, T* h_data, int N) {
       // If each merger has its own designated task all to itself
       #ifdef PIPELINE
       int launchBlocks = tasks;
+      int launchThreads = W;
       #else
       int launchBlocks = tasks/(THREADS/W);
+      int launchThreads = THREADS;
       #endif
-      findPartitions<T,f><<<launchBlocks,W>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
+      findPartitions<T,f><<<launchBlocks,launchThreads>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
+      #ifdef DEBUG
+      err = cudaGetLastError();
+      printf("%s\n", cudaGetErrorString(err));
+      cudaDeviceSynchronize();
+      printPartitions<<<1,1>>>(pivots, launchBlocks);
+      cudaDeviceSynchronize();
+      #endif
       multimergeLevel<T,f><<<launchBlocks,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks);
     }
     else {
       // Each merger splits a task with other mergers
       #ifdef PIPELINE
       int launchBlocks = P;
+      int launchThreads = W;
       #else
       int launchBlocks = P/(THREADS/W);
+      int launchThreads = THREADS;
       #endif
-      findPartitions<T,f><<<launchBlocks,W>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
+      findPartitions<T,f><<<launchBlocks,launchThreads>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
+      printPartitions<<<1,1>>>(pivots, launchBlocks);
+      #ifdef DEBUG
+      err = cudaGetLastError();
+      printf("%s\n", cudaGetErrorString(err));
+      #endif
       multimergeLevel<T,f><<<launchBlocks,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks);
     }
     listBit = !listBit; // Switch input/output arrays
+    #ifdef DEBUG
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+      printf("%s\n", cudaGetErrorString(err));
+    }
+    #endif
   }
 
   cudaDeviceSynchronize();
