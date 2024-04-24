@@ -85,7 +85,7 @@ void test_deterministic_mergelevels(int p, int N)
   cudaMalloc(&d_data, (N+padding) * sizeof(T));
   cudaMalloc(&d_output, (N+padding) * sizeof(T));
 
-  srand(0); // time(NULL)
+  srand(time(NULL)); // time(NULL)
 
 
 

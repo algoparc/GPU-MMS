@@ -25,6 +25,8 @@
 #include<algorithm>
 #include "params.h"
 
+#define ERROR_BLOCK 1008
+
 // order = 0 indicates smallest value, order = L-1 indicates largest
 template<typename T>
 struct Pair {
@@ -186,7 +188,38 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
       tempPivots[tid] = 0;
     }
   } else {
+    __shared__ T values[K];
+    int order = tid;
     int L = (taskSize+size-1)/size;
+    if (tid >= L && tid < K) {
+      values[tid] = INT_MAX;
+    } else if (tid<L) {
+      T val = data[size*tid + ((taskSize-tid*size > size) ? size : taskSize-tid*size)/2];
+      values[tid] = val;
+    }
+
+    int delta=1;
+    for (int i=0; i<PL; i++) {
+      delta*=2;
+      int direction = ((order / delta) % 2 == 0);
+      for (int j=delta; j>1; j /= 2) {
+          // Direction indicates the direction in which it is sorted. 1=increasing, 0=decreasing
+          // Higher indicates whether the particular thread should contain the higher or lower element.
+          int higher = ((order % j) < j/2) ^ direction;
+          // Exchange with the thread that has ID that is XOR with j/2 of mine. Since XOR is the same forwards as backwards, the opposite thread gets my ID, too.
+          int partner = order ^ (j/2);
+          __syncwarp();
+          T myVal = values[order];
+          __syncwarp();
+          if (!equals<T,f>(myVal, values[partner]) && (!higher ^ f(myVal, values[partner]))) {
+            values[partner] = myVal;
+            order = partner;
+          }
+          __syncwarp();
+      }
+    }
+
+    __syncwarp();
 
     if (tid<L) {
       unsigned int ballot = __ballot_sync(FULL_MASK, tid<L);
@@ -197,21 +230,17 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
       int completed;
       __shared__ int totalCompleted;
       __shared__ int sum;
-      __shared__ T values[K];
       int mySum;
       long target = mergerIdInTask*taskSize/mergersPerTask;
       taskSize--;
 
       totalCompleted=0;
       sum=0;
-
-      if (tid < L) {
-        left = -1;
-        right = (taskSize-tid*size > size) ? size : taskSize-tid*size;
-        mid = right/2;
-        completed = 0;
-        mySum = mid;
-      }
+      left = -1;
+      right = (taskSize-tid*size > size) ? size : taskSize-tid*size;
+      mid = right/2;
+      completed = 0;
+      mySum = mid;
 
       // Use kogge-stone to get sum
       int shift=1;
@@ -228,38 +257,6 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
       }
       __syncwarp(ballot);
 
-      if (blockIdx.x == 1 && tid == 0)
-        printf("sum: %d\n", sum);
-      // Finished getting sum
-
-
-      // Sort all the elements, by assigning a value to the "order" field. valExchange
-      T val = data[size*tid + mid];
-      int order = tid;
-      values[tid] = val;
-
-      __syncwarp(ballot);
-
-      int delta=1;
-      for (int i=0; i<PL; i++) {
-        delta*=2;
-        int direction = ((order / delta) % 2 == 0);
-        for (int j=delta; j>1; j /= 2) {
-            // Direction indicates the direction in which it is sorted. 1=increasing, 0=decreasing
-            // Higher indicates whether the particular thread should contain the higher or lower element.
-            int higher = ((order % j) < j/2) ^ direction;
-            // Exchange with the thread that has ID that is XOR with j/2 of mine. Since XOR is the same forwards as backwards, the opposite thread gets my ID, too.
-            int partner = order ^ (j/2);
-            __syncwarp(ballot);
-            T myVal = values[order];
-            __syncwarp(ballot);
-            if (partner<L && !equals<T,f>(myVal, values[partner]) && (!higher ^ f(myVal, values[partner]))) {
-              values[partner] = myVal;
-              order = partner;
-            }
-            __syncwarp(ballot);
-        }
-      }
 
       // moveMax is true if we move the max pivot. The thread that moves the pivot has active as 1 and inactive as 0.
       int moveMax;
@@ -281,27 +278,17 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
 
         __syncwarp(ballot);
 
-        if (blockIdx.x == 1 && tid == 0) {
-          for (int i=0; i<L; i++) {
-            printf("%d ", values[i]);
-          }
-          printf("\n");
-        }
-
-        if (blockIdx.x == 1) {
-          for (int i=0; i<L; i++) {
-            if (tid == i) {
-              printf("%3d ", order);
-            }
-            __syncwarp(ballot);
-          }
-        }
-
-        __syncwarp(ballot);
-
         if (active) {
-          if (blockIdx.x == 1)
+          /*
+          if (blockIdx.x == 1) {
             printf("\nmoveMax: %d, endOffset: %d, startOffset: %d\nactive thread: %d\n", moveMax, endOffset, startOffset, threadIdx.x);
+            printf("Values: ");
+            for (int i=startOffset; i<=L-1-endOffset; i++) {
+              printf("%d ", values[i]);
+            }
+            printf("\n");
+          }
+          */
           if (moveMax) {
             right = mid;
           } else if (!moveMax) {
@@ -310,12 +297,6 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
           sum -= mid;
           mid = (left+right)/2;
           sum += mid;
-          if (blockIdx.x == 1) {
-            for (int i=startOffset; i<=L-1-endOffset; i++) {
-              printf("%d ", values[i]);
-            }
-            printf("\n");
-          }
           if (left + 1 == right) {
             totalCompleted++;
             tempPivots[tid] = right;
@@ -334,31 +315,33 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
         }
 
         __syncwarp(ballot);
+
         int newOrder=order;
         if (readjust && !active) {
           if (moveMax) {
             T temporaryReadVal = values[order];
             // unsigned mask = ballot ^ activeThreadBit;
-            __syncwarp(__activemask());
+            __syncwarp(ballot & !activeThreadBit);
             // if (blockIdx.x == 1) printf("|");
-            if (f(temp, values[order])) {
+            if (!equals<T,f>(temp, temporaryReadVal) && f(temp, temporaryReadVal)) {
               newOrder = order+1;
-              values[newOrder] = values[order];
+              values[newOrder] = temporaryReadVal;
             }
           } else {
             T temporaryReadVal = values[order];
             // unsigned mask = ballot ^ activeThreadBit;
-            __syncwarp(__activemask());
+            __syncwarp(ballot & !activeThreadBit);
             // if (blockIdx.x == 1) printf("|");
-            if (f(values[order], temp)) {
+            if (!equals<T,f>(temp, temporaryReadVal) && f(temporaryReadVal, temp)) {
               newOrder = order-1;
-              values[newOrder] = values[order];
+              values[newOrder] = temporaryReadVal;
             }
           }
         }
 
         __syncwarp(ballot);
-        int position = __builtin_popcountll(__ballot_sync(FULL_MASK, (!active && order != newOrder))); // Computes which threads have changed order. If 
+        
+        int position = __popc(__ballot_sync(FULL_MASK, (!active && order != newOrder))); // Computes which threads have changed order. If 
         // printf("position: %d\n", position);
         if (readjust && active) {
           if (moveMax) {
@@ -368,6 +351,7 @@ __device__ void single_pivot_partition(T* data, int* tempPivots, long size, long
           }
           values[newOrder] = temp;
         }
+        
 
         __syncwarp(ballot);
         order = newOrder;

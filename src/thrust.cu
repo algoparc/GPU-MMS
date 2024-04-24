@@ -40,6 +40,8 @@ int main(int argc, char ** argv) {
     // Host vector of integers
     int* h_array = (int*) malloc(N * sizeof(int));
 
+    srand(time(NULL));
+
     create_random_list<int>(h_array, N);
 
     // Copy the host array to device

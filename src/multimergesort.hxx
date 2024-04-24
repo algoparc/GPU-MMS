@@ -118,10 +118,10 @@ T* multimergesort(T* input, T* output, T* h_data, int N) {
       int launchThreads = THREADS;
       #endif
       findPartitions<T,f><<<launchBlocks,launchThreads>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
-      printPartitions<<<1,1>>>(pivots, launchBlocks);
       #ifdef DEBUG
       err = cudaGetLastError();
       printf("%s\n", cudaGetErrorString(err));
+      printPartitions<<<1,1>>>(pivots, launchBlocks);
       #endif
       multimergeLevel<T,f><<<launchBlocks,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks);
     }
