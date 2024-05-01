@@ -12,7 +12,7 @@ void create_random_list(T* data, int size);
 
 struct IntegerComparator {
     __host__ __device__ bool operator()(int a, int b) const {
-        return a*a-1 <= b*b+2;
+        return a*a+1 <= b*b+3;
     }
 };
 
