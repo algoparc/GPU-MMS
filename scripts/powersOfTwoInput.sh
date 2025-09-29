@@ -21,13 +21,8 @@
 # varies with input size, N
 # NOTE: Change the compute capability in the nvcc commands below based on the GPU you are using.
 
-cd ../src
-for n in {10..26}
+for n in 2097152 4194304 8388608 16777216 33554432 67108864 134217728
 do
-    for i in {1..100}
-    do
-        a=$(( (2 ** $n) + $RANDOM * (2 ** $n) / 32768 ))
-        echo $a
-        ./testMM $a
-    done
+    ./testMM $n
+  echo ""
 done

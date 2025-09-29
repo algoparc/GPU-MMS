@@ -21,7 +21,6 @@
 #define DATATYPE int // Datatype to sort
 #define CASTTYPE int // Datatype to cast key to in order to use __shfl()
 
-
 // Define MAX_INT and MIN_INT as maximum and minimum key values
 // FOR INTEGERS
 #define MAXVAL 2147483647
@@ -37,10 +36,10 @@ typedef int(*fptr_t)(DATATYPE, DATATYPE);
 // Edit this to be whatever comparison function is needed.
 template<typename T>
 __forceinline__ __device__ int cmp(T a, T b) {
-  return a < b; // Basic less than comparison
+  return a < b;
 
 // L1-norm (manhattan distance)
-//  return ((((int)a)+(int)(a>>32)) < (((int)b)+(int)(b>>32))); // L1-norm (manhattan distance)
+  // return ((((int)a)) < (((int)b))); // L1-norm (manhattan distance)
 
 // Comparison of fractional values without loss of precision
 //  return (((int)(a>>32)*(int)b) < (((int)(b>>32))*(int)a));
@@ -49,9 +48,10 @@ __forceinline__ __device__ int cmp(T a, T b) {
 // Host comparison function to check correctness when debugging
 template<typename T>
 __forceinline__ int host_cmp(T a, T b) {
-  return a < b;
-}
+  // return a < b;
 
+  return (((int)a)) < (((int)b));
+}
 
 /*******************************************************************
 * Example structure for key/value pair sorting

@@ -54,22 +54,48 @@ void printResult(int* data) {
   }
 }
 
-/* Main basecase sorting Kernel */
+/* 
+   Main basecase sorting Kernel.
+   Successfully sorts for input sizes
+   that are multiples of M.
+*/
 template<typename T, fptr_t f>
 __global__ void squareSort(T* data, int N) {
   T regs[ELTS];
+  int tid = threadIdx.x%W;
+  int warpId = threadIdx.x/W;
+  int warpOffset = warpId*ELTS*W;
+
+  if (blockIdx.x == gridDim.x - 1 && N%M) {
+    int remainder = N%M;
+    int offset = N-remainder;
+    if (threadIdx.x == 0) {
+      for (int i = 0; i < remainder; i++) {
+        T min = data[offset+i];
+        int index = i;
+        for (int j = i+1; j < remainder; j++) {
+          if (f(data[offset+j], min)) {
+            index = j;
+            min = data[offset+j];
+          }
+        }
+        T temp = data[offset+i];
+        data[offset+i] = min;
+        data[offset+index] = temp;
+      }
+    }
+  }
+  N = N-N%M;
 
 
-  int blockOffset = (N/gridDim.x)*blockIdx.x;
+  int blockOffset = M * blockIdx.x;
 
-  for(int sec = 0; sec < (N/gridDim.x); sec += M*(THREADS/W)) {
+  for(int sec = 0; sec < (N/gridDim.x); sec += M*(THREADS_BASE_CASE/W)) { // iterates until you hit the upper bound of N/gridDim.x which is the number of elements processed per block 
     for(int i=0; i<ELTS; i++) {
-      regs[i] = data[blockOffset + sec + (i*THREADS) + threadIdx.x];
+      regs[i] = data[blockOffset + sec + (i*THREADS_BASE_CASE) + threadIdx.x];
     }
     
-    int tid = threadIdx.x%W;
-    int warpId = threadIdx.x/W;
-    int warpOffset = warpId*ELTS*W;
+    
     __shared__ T sData[M];
 
 // Code that is needed for base case larger than 1024.
@@ -99,7 +125,7 @@ __global__ void squareSort(T* data, int N) {
       data[blockOffset + sec + warpOffset + W*i + tid] = sData[tid*W + (tid+i)%W];
     }
 
-    for(int i=(THREADS/W)-1; i>warpId; i--) // Wait for other warps to catch back up
+    for(int i=(THREADS_BASE_CASE/W)-1; i>warpId; i--) // Wait for other warps to catch back up
       __syncthreads();
   }
 }

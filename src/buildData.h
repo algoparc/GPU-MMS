@@ -27,8 +27,17 @@
 template<typename T>
 void create_sorted_list(T* data, int size, int addVal) {
   for(int i=0; i<size; i++) {
-//    data[i].key = i+addVal;
-//    data[i].val = i-addVal;
+    data[i] = i;
+  }
+}
+
+template<typename T>
+void randomize(T* data, int size) {
+  for(int i=0; i<size; i++) {
+    int j = rand()%(size-i)+i;
+    T temp = data[i];
+    data[i] = data[j];
+    data[j] = temp;
   }
 }
 /*
@@ -43,15 +52,14 @@ void create_random_sorted_list(T* data, int size) {
 */
 
 template<typename T>
-void create_random_list(T* data, int size, int min) {
-  srand(time(NULL));
+void create_random_list(T* data, int size) {
   long temp;
 //printf("size:%d\n", size);
   for(int i=0; i<size; i++) {
 //    data[i].key = rand()%RANGE + min;
 //    data[i].val = rand()%RANGE + min;
-    data[i] = (rand()%RANGE) + min + 1;
-    temp = rand()%RANGE + min + 1;
+    data[i] = (rand()%RANGE);
+    temp = rand()%RANGE;
     data[i] += (temp<<32);
   }
 }

@@ -15,7 +15,6 @@
  *
  */
 
-
 #include<stdio.h>
 #include<iostream>
 #include<fstream>
@@ -26,12 +25,13 @@
 #include "params.h"
 #include "io-merge-gen.hxx"
 #include "warp-partition.hxx"
-
-
+#include "pad.hxx"
 
 // Function that does a single level of multiway mergesort
 template<typename T, fptr_t f>
-__global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks, int P);
+__global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks);
+template <typename T, fptr_t f>
+__global__ void testSortedSegments(int* d_arr, int segmentSize, int N);
 
 // Depricated function, was an attempt to implement another optimization that didn't turn out to be worthwhile.
 //template<typename T>
@@ -45,124 +45,187 @@ __global__ void print_count() {
   if(threadIdx.x==0 && blockIdx.x==0) printf("cmps:%d\n", tot_cmp);
 }
 
-/* Main CPU function that sorts an input and writes the result to output */
+
+/* Main CPU function that sorts an input and writes the result to output 
+   Parameters:
+     T* input:    The DEVICE array input to merge
+     T* output:   The DEVICE array output
+     T* h_data:   The same array values as input, but exists on the host
+     N:           The size of the array to merge
+*/
 template<typename T, fptr_t f>
-T* multimergesort(T* input, T* output, T* h_data, int P, int N) {
-  int WARPS = P*(THREADS/W);
+T* multimergesort(T* input, T* output, T* h_data, int N) {
+  #ifdef DEBUG
+  cudaError_t err;
+  #endif
   int* pivots;
-  cudaMalloc(&pivots, (WARPS+1)*K*sizeof(int));
-  cudaMemset(&pivots, 0, (WARPS+1)*K*sizeof(int));
+  int pivotsMemorySize = sizeof(int) * K * (1 + (N+M*K-1)/M/K);
+  cudaMalloc((void**) &pivots, pivotsMemorySize);
   int tasks;
+  int edgeCaseTaskSize;
   T* list[2];
   list[0]=input;
   list[1]=output;
   bool listBit = false;
-  int baseBlocks=((N/M)/(THREADS/W));
+  int baseBlocks=((N/M)/(THREADS_BASE_CASE/W));
+  // P represents the maximum number of mergers that can be used without partitioning
+  #ifdef PIPELINE
+  int P = BLOCKS;
+  #else
+  int P = BLOCKS*(THREADS/W);
+  #endif
 
 // Sort the base case into blocks of 1024 elements each
-  squareSort<T,f><<<baseBlocks,THREADS>>>(input, N);
+  squareSort<T,f><<<baseBlocks,THREADS_BASE_CASE>>>(input, N);
 
-// Check that basecase properly sorted if in DEBUG mode
-#ifdef DEBUG
-  bool correct=true;
-  cudaMemcpy(h_data, input, N*sizeof(T), cudaMemcpyDeviceToHost);
+/*
+  Perform successive merge rounds.
+  We are sorting lists with size listSize, which starts at M=1024,
+  because we just finished sorting the base cases of contiguous
+  1024 elements.
+*/
+  for(int listSize=M; listSize < N; listSize *= K) {
 
-  for(int i=0; i<N/M; i++) {
-    for(int j=1; j<M; j++) {
-      if(f(h_data[i*M+(j)], h_data[i*M+(j-1)])) {
-        correct=false;
-      }
+    tasks = N/listSize/K + ((N%(K*listSize))>0);
+    edgeCaseTaskSize = (N%(K*listSize)>0) ? N%(K*listSize) : K*listSize;
+
+    if(tasks > P) {
+      // If each merger has its own designated task all to itself
+      #ifdef PIPELINE
+      int launchBlocks = tasks;
+      int launchThreads = W;
+      #else
+      int launchBlocks = tasks/(THREADS/W);
+      int launchThreads = THREADS;
+      #endif
+      findPartitions<T,f><<<launchBlocks,launchThreads>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
+      #ifdef DEBUG
+      err = cudaGetLastError();
+      printf("%s\n", cudaGetErrorString(err));
+      cudaDeviceSynchronize();
+      printPartitions<<<1,1>>>(pivots, launchBlocks);
+      cudaDeviceSynchronize();
+      #endif
+      multimergeLevel<T,f><<<launchBlocks,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks);
     }
-  }
-  if(!correct) printf("base case not sorted!\n");
-#endif
-
-// Perform successive merge rounds
-  for(int listSize=M; listSize <= (N/K); listSize *= K) {
-    tasks = (N/listSize)/K;
-
-    if(tasks > WARPS) { // If each warp has to perform multiple merges
-      for(int i=0; i<tasks/WARPS; i++) {
-        findPartitions<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
-
-#ifdef DEBUG // Check proper partitioning if debug mode
-  testPartitioning<T><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), pivots, listSize, tasks,WARPS);
-        cudaDeviceSynchronize();
-#endif
-
-	// Merge based on partitions
-        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+(i*WARPS*K*listSize), list[!listBit]+(i*WARPS*K*listSize), pivots, listSize, WARPS, P);
-      }
-
-// Perform remaining tasks
-      if(tasks%WARPS > 0) {
-        findPartitions<T><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, WARPS*K, WARPS, P);
-        cudaDeviceSynchronize();
-
-        multimergeLevel<T,f><<<P,THREADS>>>(list[listBit]+((tasks/WARPS)*WARPS*K*listSize), list[!listBit]+((tasks/WARPS)*WARPS*K*listSize), pivots, listSize, tasks%WARPS, P);
-      }
-    }
-
-    else { // Each warp only does one task
-      findPartitions<T><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks*K, tasks, P);
-#ifdef DEBUG
-  testPartitioning<T><<<P,THREADS>>>(list[listBit], pivots, listSize, tasks, WARPS);
-#endif
-      multimergeLevel<T,f><<<P,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks, P);
+    else {
+      // Each merger splits a task with other mergers
+      #ifdef PIPELINE
+      int launchBlocks = P;
+      int launchThreads = W;
+      #else
+      int launchBlocks = P/(THREADS/W);
+      int launchThreads = THREADS;
+      #endif
+      findPartitions<T,f><<<launchBlocks,launchThreads>>>(list[listBit], pivots, listSize, tasks, edgeCaseTaskSize);
+      #ifdef DEBUG
+      err = cudaGetLastError();
+      printf("%s\n", cudaGetErrorString(err));
+      printPartitions<<<1,1>>>(pivots, launchBlocks);
+      #endif
+      multimergeLevel<T,f><<<launchBlocks,THREADS>>>(list[listBit], list[!listBit], pivots, listSize, tasks);
     }
     listBit = !listBit; // Switch input/output arrays
+    #ifdef DEBUG
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+      printf("%s\n", cudaGetErrorString(err));
+    }
+    #endif
   }
 
+  cudaDeviceSynchronize();
   cudaFree(pivots);
 
-  return list[listBit];
+  return list[listBit]; // This returns the array that was last used as output
 }
 
+/*
+    Performs one level of merge, assuming that the pivots have already been determined.
+    Parameters:
 
-/* Main Kernel to merge groups of K lists */
+    T* data     -- The input to merge. The data should already pass in any offsets, so the merge will begin at index 0 relative to the data pointer.
+    T* output   -- The location to store the output.
+    int* pivots -- Where the pivots are stored. There should be K pivots for every active warp, with one additional set of pivots, so the length of relevant pivot array should be K*(activeWarps + 1)
+    long size   -- The size of each sorted subarray to be merged. We will merge these sorted subarrays into sizes of K*size
+    int tasks   -- The number of tasks. Each task is defined as a single merge of four subarray sections
+    int P       -- The number of blocks (equivalent to gridDim.x)
+*/
+
 template<typename T, fptr_t f>
-__global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks, int P) {
-  int totalWarps = P*(THREADS/W);
-  int warpInBlock = threadIdx.x/W;
-  int warpIdx = (blockIdx.x)*(THREADS/W)+warpInBlock;
-  int tid = threadIdx.x%W;
-
-
+__global__ void multimergeLevel(T* data, T* output, int* pivots, long size, int tasks) {
+  #ifdef PIPELINE
+  __shared__ int start[K];
+  __shared__ int end[K];
+  int tid = threadIdx.x;
+  int mergersPerTask = gridDim.x/tasks;
+  int mergerIdx = blockIdx.x;
+  if(mergersPerTask == 0) mergersPerTask=1;
+  int myTask = blockIdx.x/mergersPerTask;
+  #else
   __shared__ int startRaw[K*(THREADS/W)];
-  int* start = startRaw+(warpInBlock*K);
   __shared__ int endRaw[K*(THREADS/W)];
-  int* end = endRaw+(warpInBlock*K);
+  int* start = startRaw+(threadIdx.x/W)*K;
+  int* end = endRaw+(threadIdx.x/W)*K;
+  int tid = threadIdx.x%W;
+  int mergersPerTask = gridDim.x*(THREADS/W)/tasks;
+  int mergerIdx = blockIdx.x*(THREADS/W) + (threadIdx.x/W);
+  if(mergersPerTask == 0) mergersPerTask=1;
+  int myTask = mergerIdx/mergersPerTask;
+  #endif
 
-  int warpsPerTask = totalWarps/tasks;
-  if(warpsPerTask == 0) warpsPerTask=1;
-  int myTask = warpIdx/warpsPerTask;
   long taskOffset = size*K*myTask;
+  
+  long outputOffset=0;
 
   if(myTask < tasks) {
 
-    if(tid<K) {
-      start[tid] = pivots[(warpIdx*K)+tid];
-//      if(start[tid]%B != 0)
-//        start[tid] = start[tid] -start[tid]%B;
+    if(threadIdx.x<K) {
+      start[threadIdx.x] = pivots[(mergerIdx*K)+tid];
     }
 
-    if(tid<K) 
-      end[tid] = pivots[(totalWarps*K)+tid];
-    if(warpIdx % warpsPerTask < warpsPerTask-1 && tid < K)
-      end[tid] = pivots[((warpIdx+1)*K)+tid];
+    if(threadIdx.x<K) 
+      end[tid] = (myTask<tasks-1)*size + (myTask==tasks-1)*pivots[mergersPerTask*tasks*K+tid];
+    if(mergerIdx % mergersPerTask < mergersPerTask-1 && tid < K)
+      end[tid] = pivots[((mergerIdx+1)*K)+tid];
 
-    int outputOffset=0;
+    #ifdef PIPELINE
+    __syncthreads();
+    #else
+    __syncwarp();
+    #endif
+
     for(int i=0; i<K; i++)
       outputOffset+=start[i];
 
-#ifdef PIPELINE
+    #ifdef PIPELINE
+    __syncthreads();
     multimergePipeline<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
-#else
-    multimerge<T>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
-#endif
-  } 
+    #else
+    __syncwarp();
+    multimerge<T,f>(data+taskOffset, output+taskOffset, start, end, size, outputOffset);
+    #endif
+  }
 }
 
+// Serially tests if the array has been sorted for a certain segment size, for testing only
+template <typename T, fptr_t f>
+__global__ void testSortedSegments(int* d_arr, int segmentSize, int N) {
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    for (int i = 0; i < N; i += segmentSize) {
+      for (int j = 1; j < segmentSize; j++) {
+        if (i+j >= N) {
+          break;
+        }
+        if (!f(d_arr[i+j-1], d_arr[i+j])) {
+          printf("UNSORTED (WITH SEGMENT SIZES %d) AT INDEX %d AND %d\n", segmentSize, i+j-1, i+j);
+          return;
+        }
+      }
+    }
+    printf("SORTED WITH SEGMENT SIZES : %d\n", segmentSize);
+  }
+}
 
 /************************************************************
 * Depricated code.  Attempt at another optimization, but did

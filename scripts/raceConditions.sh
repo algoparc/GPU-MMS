@@ -22,12 +22,7 @@
 # NOTE: Change the compute capability in the nvcc commands below based on the GPU you are using.
 
 cd ../src
-for n in {10..26}
+for n in {1..1000}
 do
-    for i in {1..100}
-    do
-        a=$(( (2 ** $n) + $RANDOM * (2 ** $n) / 32768 ))
-        echo $a
-        ./testMM $a
-    done
+    ./testMM $((2 ** 20 + 9000))
 done
